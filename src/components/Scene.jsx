@@ -1,43 +1,169 @@
-import { Suspense } from 'react'
-import { Canvas } from '@react-three/fiber'
-import { ContactShadows, Environment, OrbitControls, PerspectiveCamera } from '@react-three/drei'
-import { Bloom, EffectComposer, ToneMapping } from '@react-three/postprocessing'
+import { Suspense, useLayoutEffect, useRef, useState } from 'react'
+import { Canvas, useFrame } from '@react-three/fiber'
+import { ContactShadows, Environment, OrbitControls, PerspectiveCamera, Stars } from '@react-three/drei'
+import { Bloom, EffectComposer, TiltShift2, ToneMapping, Vignette } from '@react-three/postprocessing'
 import { ToneMappingMode } from 'postprocessing'
 import { useControls } from 'leva'
 import * as THREE from 'three'
+import { useStadiumEvent } from '../game/events'
 import { CameraSnapshot } from './CameraSnapshot'
-import { Loading } from './Loading'
+import { Confetti } from './Confetti'
 import { Sky } from './Sky'
 import { Stadium } from './Stadium'
 
-export function Scene() {
+const DEBUG = new URLSearchParams(window.location.search).has('debug')
+
+// Per-screen cinematic camera shots. The rig damps position/target/fov toward
+// the active shot every frame, so screen changes become smooth camera moves
+// instead of cuts. Non-match screens get a slow autonomous sway (the "attract
+// mode" drift); the match shot swaps the sway for the pointer mouse-look, and
+// charging (stadium:windup → kick/reset) ramps a damped pre-kick state: camera
+// sinks/pushes in slightly, drifts laterally, fov tightens ~3.5°. On
+// top of that, a subtle trauma-style shake (offset = trauma² × mixed-frequency
+// sines) rocks the camera rotation on ball contact and goal so shots land with
+// weight. The rotation offsets are applied after lookAt, which recomputes
+// rotation every frame, so they never accumulate. Debug (OrbitControls) skips
+// all this.
+// All shots stay in the stadium's open camera end (no wall there) or on the
+// pitch itself — side positions beyond x≈±12 land inside the bleachers/wall.
+const SHOTS = {
+  // While assets load the rig holds this high aerial; when the stadium mounts
+  // it damps down into the menu shot — the fly-in IS the site entrance. Same
+  // side as the menu shot so the descent never crosses geometry or empty sky.
+  intro: { pos: [30, 26, 56], target: [0, 1, -10], fov: 40, sway: 0.05 },
+  menu: { pos: [14, 9, 40], target: [0, 3, -10], fov: 36, sway: 0.08 },
+  about: { pos: [-14, 8, 40], target: [0, 4, -10], fov: 36, sway: 0.06 },
+  bracket: { pos: [-8, 14, 30], target: [0, 3, -12], fov: 34, sway: 0.05 },
+  result: { pos: [7, 3.5, 4], target: [0, 2.6, -11], fov: 34, sway: 0.05 },
+  // Win: hero close-up on the celebrating player (he holds at world z≈23 after
+  // the winning shot — the walk-back is skipped), slow arc around him.
+  resultWin: { pos: [2.8, 3.1, 29.8], target: [0, 2.7, 23], fov: 33, sway: 0.2 },
+  champion: { pos: [-3.6, 4.4, 30.6], target: [0, 3, 23], fov: 38, sway: 0.16 },
+  match: { pos: [0, 4.2, 38], target: [0, 0, -14], fov: 31, sway: 0 },
+}
+
+function CameraRig({ screen }) {
+  const rigRef = useRef(null)
+  // Tournament win → the result screen uses the celebration close-up.
+  const [won, setWon] = useState(false)
+  useStadiumEvent('stadium:matchend', (event) => setWon(!!event.detail?.win))
+  useStadiumEvent('stadium:matchstart', () => setWon(false))
+  useLayoutEffect(() => {
+    rigRef.current ??= { target: new THREE.Vector3(0, 0, -14), pos: new THREE.Vector3(), trauma: 0, charge: 0, charging: false, ready: false }
+  }, [])
+  const bump = (amount) => {
+    const rig = rigRef.current
+    if (rig) rig.trauma = Math.min(1, rig.trauma + amount)
+  }
+  // stadium:launch = actual foot-on-ball contact (stadium:kick fires at mouse
+  // release, up to RUN_UP_TIME + KICK_CONTACT before the strike).
+  useStadiumEvent('stadium:launch', () => bump(0.3))
+  useStadiumEvent('stadium:goal', () => bump(0.45))
+  // Pre-kick tension: charging drives a damped 0→1 factor that lowers/pushes
+  // the camera in, adds lateral drift and tightens fov — all near-imperceptible.
+  const setCharging = (on) => {
+    if (rigRef.current) rigRef.current.charging = on
+  }
+  // Entrance latch: fires when Stadium actually mounts (Suspense resolved),
+  // then the normal damping flies the camera from the intro aerial to the menu.
+  useStadiumEvent('stadium:loaded', () => {
+    if (rigRef.current) rigRef.current.ready = true
+  })
+  useStadiumEvent('stadium:windup', () => setCharging(true))
+  useStadiumEvent('stadium:kick', () => setCharging(false))
+  useStadiumEvent('stadium:reset', () => setCharging(false))
+
+  useFrame((state, delta) => {
+    const rig = rigRef.current
+    if (!rig) return
+    const shot = !rig.ready ? SHOTS.intro : (SHOTS[screen === 'result' && won ? 'resultWin' : screen] ?? SHOTS.match)
+    const time = state.clock.elapsedTime
+    const cam = state.camera
+
+    // Pointer look during play, slow sway on the menu shots.
+    const yaw = screen === 'match' ? -state.pointer.x * 0.06 : Math.sin(time * 0.16) * shot.sway
+    const ox = shot.pos[0] - shot.target[0]
+    const oz = shot.pos[2] - shot.target[2]
+    const angle = Math.atan2(ox, oz) + yaw
+    const radius = Math.hypot(ox, oz)
+    rig.pos.set(shot.target[0] + Math.sin(angle) * radius, shot.pos[1], shot.target[2] + Math.cos(angle) * radius)
+
+    // Slow ramp in while charging (~0.9/s), quicker release back to neutral.
+    rig.charge = THREE.MathUtils.damp(rig.charge, rig.charging && screen === 'match' ? 1 : 0, rig.charging ? 0.9 : 3, delta)
+    const c = rig.charge
+    if (c > 0.001) {
+      rig.pos.y -= 0.45 * c // slightly lower
+      rig.pos.z -= 1.4 * c // slow push-in toward the goal
+      rig.pos.x += Math.sin(time * 0.65) * 0.14 * c // slight lateral drift
+    }
+
+    cam.position.x = THREE.MathUtils.damp(cam.position.x, rig.pos.x, 2, delta)
+    cam.position.y = THREE.MathUtils.damp(cam.position.y, rig.pos.y, 2, delta)
+    cam.position.z = THREE.MathUtils.damp(cam.position.z, rig.pos.z, 2, delta)
+    rig.target.x = THREE.MathUtils.damp(rig.target.x, shot.target[0], 2.4, delta)
+    rig.target.y = THREE.MathUtils.damp(rig.target.y, shot.target[1], 2.4, delta)
+    rig.target.z = THREE.MathUtils.damp(rig.target.z, shot.target[2], 2.4, delta)
+    cam.lookAt(rig.target)
+    cam.fov = THREE.MathUtils.damp(cam.fov, shot.fov - 3.5 * c, 2, delta)
+    cam.updateProjectionMatrix()
+
+    if (rig.trauma > 0) {
+      const s = rig.trauma * rig.trauma
+      cam.rotation.x += Math.sin(time * 31) * s * 0.03
+      cam.rotation.y += Math.cos(time * 27) * s * 0.03
+      cam.rotation.z += Math.sin(time * 23) * s * 0.012
+      rig.trauma = Math.max(0, rig.trauma - delta * 0.8)
+    }
+  })
+  return null
+}
+
+export function Scene({ cfg, screen }) {
   const { px, py, pz, tx, ty, tz, fov } = useControls('camera', {
-    px: { value: 2.5, min: -80, max: 80, step: 0.5, label: 'pos x' },
-    py: { value: 5.3, min: -20, max: 80, step: 0.5, label: 'pos y' },
-    pz: { value: 40.7, min: -80, max: 80, step: 0.5, label: 'pos z' },
+    px: { value: 2.9, min: -80, max: 80, step: 0.5, label: 'pos x' },
+    py: { value: 4.2, min: -20, max: 80, step: 0.5, label: 'pos y' },
+    pz: { value: 38, min: -80, max: 80, step: 0.5, label: 'pos z' },
     tx: { value: 0, min: -40, max: 40, step: 0.5, label: 'target x' },
-    ty: { value: 3, min: -20, max: 40, step: 0.5, label: 'target y' },
+    ty: { value: 0, min: -20, max: 40, step: 0.5, label: 'target y' },
     tz: { value: -14, min: -40, max: 60, step: 0.5, label: 'target z' },
-    fov: { value: 36, min: 15, max: 90, step: 1 },
+    fov: { value: 31, min: 15, max: 90, step: 1 },
   })
 
   const { bloomEnabled, bloomMipmapBlur, bloomThreshold, bloomSmoothing, bloomIntensity, bloomRadius } =
     useControls('bloom', {
       bloomEnabled: { value: true, label: 'enabled' },
       bloomMipmapBlur: { value: true, label: 'mipmap blur' },
-      bloomThreshold: { value: 0.9, min: 0, max: 2, step: 0.01, label: 'threshold' },
+      bloomThreshold: { value: 0.84, min: 0, max: 2, step: 0.01, label: 'threshold' },
       bloomSmoothing: { value: 0.2, min: 0, max: 1, step: 0.01, label: 'smoothing' },
-      bloomIntensity: { value: 1.6, min: 0, max: 6, step: 0.05, label: 'intensity' },
-      bloomRadius: { value: 0, min: 0, max: 1, step: 0.01, label: 'radius' },
+      bloomIntensity: { value: 2.0, min: 0, max: 6, step: 0.05, label: 'intensity' },
+      bloomRadius: { value: 0.53, min: 0, max: 1, step: 0.01, label: 'radius' },
     })
+
+  const { sideBlurEnabled, sideBlurAmount, sideBlurTaper } = useControls('side blur', {
+    sideBlurEnabled: { value: true, label: 'enabled' },
+    sideBlurAmount: { value: 0.11, min: 0, max: 1, step: 0.01, label: 'side blur' },
+    sideBlurTaper: { value: 0.76, min: 0, max: 2, step: 0.01, label: 'side taper' },
+  })
+
+  const { vignetteEnabled, vignetteOffset, vignetteDarkness } = useControls('vignette', {
+    vignetteEnabled: { value: true, label: 'enabled' },
+    vignetteOffset: { value: 0.0, min: 0, max: 1, step: 0.01, label: 'offset' },
+    vignetteDarkness: { value: 0.8, min: 0, max: 1.5, step: 0.01, label: 'darkness' },
+  })
 
   return (
     <Canvas
       className="stadium-canvas"
-      dpr={[1, 2]}
+      dpr={[1, 1.5]}
       style={{ position: 'absolute', inset: 0, width: '100vw', height: '100dvh' }}
       gl={{
-        antialias: true,
+        // EffectComposer renders the scene to its own FBO, so canvas MSAA/depth/
+        // stencil only cost (Safari pays double for the multisampled default
+        // framebuffer); AA comes from the composer's multisampling instead.
+        antialias: false,
+        stencil: false,
+        depth: false,
+        powerPreference: 'high-performance', // dual-GPU Macs default to the iGPU otherwise
         outputColorSpace: THREE.SRGBColorSpace,
         toneMapping: THREE.ACESFilmicToneMapping,
         toneMappingExposure: 1.05,
@@ -45,25 +171,38 @@ export function Scene() {
     >
       <color attach="background" args={['#cdb59b']} />
       <PerspectiveCamera makeDefault fov={fov} near={0.1} far={400} position={[px, py, pz]} />
-      <OrbitControls
-        makeDefault
-        target={[tx, ty, tz]}
-        minDistance={14}
-        maxDistance={80}
-        maxPolarAngle={Math.PI / 2.05}
-        enableDamping
-        dampingFactor={0.06}
-        mouseButtons={{ LEFT: -1, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }}
-        touches={{ ONE: -1, TWO: THREE.TOUCH.DOLLY_ROTATE }}
-      />
-      <CameraSnapshot />
-      <hemisphereLight args={['#e9dcc9', '#77836e', 0.55]} />
-      <ambientLight intensity={0.25} />
-      <directionalLight color="#ffd9a8" intensity={1.6} position={[12, 18, 10]} />
+      {DEBUG ? (
+        <>
+          <OrbitControls
+            makeDefault
+            target={[tx, ty, tz]}
+            minDistance={14}
+            maxDistance={80}
+            maxPolarAngle={Math.PI / 2.05}
+            enableDamping
+            dampingFactor={0.06}
+            mouseButtons={{ LEFT: -1, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }}
+            touches={{ ONE: -1, TWO: THREE.TOUCH.DOLLY_ROTATE }}
+          />
+          <CameraSnapshot />
+        </>
+      ) : (
+        <CameraRig screen={screen} />
+      )}
+      <hemisphereLight args={['#e9dcc9', '#77836e', 0.32]} />
+      <ambientLight intensity={0.2} />
+      {/* Key from the side (bright side + shadow side = readable egg silhouette); cool fill from the far side so the shadow side isn't black. */}
+      <directionalLight color="#ffd9a8" intensity={2.4} position={[-14, 16, 6]} />
+      <directionalLight color="#9fb8d6" intensity={0.65} position={[12, 8, 2]} />
       <Sky />
-      <Suspense fallback={<Loading />}>
-        <Stadium />
+      <Confetti screen={screen} />
+      <Stars radius={80} depth={60} count={2000} factor={7} saturation={0} speed={0.5} />
+      {/* no in-canvas fallback: R3F doesn't paint until this resolves — the
+          DOM <Loading /> overlay covers the boot */}
+      <Suspense fallback={null}>
+        <Stadium cfg={cfg} />
         <ContactShadows
+          frames={1} /* bake once: moving objects carry their own shadow planes */
           position={[0, -0.015, 0]}
           opacity={0.2}
           color="#000000"
@@ -73,7 +212,8 @@ export function Scene() {
         />
         <Environment preset="city" environmentIntensity={0.3} />
       </Suspense>
-      <EffectComposer>
+      {/* multisampling 4 (default 8): halves MSAA resolve bandwidth, no visible difference at this dpr */}
+      <EffectComposer multisampling={4}>
         {bloomEnabled && (
           <Bloom
             mipmapBlur={bloomMipmapBlur}
@@ -83,7 +223,12 @@ export function Scene() {
             radius={bloomRadius}
           />
         )}
-        <ToneMapping mode={ToneMappingMode.OPTIMIZED_CINEON} />
+        {/* blur ramps perpendicular to the focus line: vertical center line -> side blur */}
+        {sideBlurEnabled && (
+          <TiltShift2 blur={sideBlurAmount} taper={sideBlurTaper} start={[0.5, 0]} end={[0.5, 1]} samples={8} />
+        )}
+        {/* <ToneMapping mode={ToneMappingMode.OPTIMIZED_CINEON} /> */}
+        {vignetteEnabled && <Vignette offset={vignetteOffset} darkness={vignetteDarkness} />}
       </EffectComposer>
     </Canvas>
   )

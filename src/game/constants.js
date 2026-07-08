@@ -7,13 +7,16 @@ import * as THREE from 'three'
 // Penalty shootout: aim with the pointer, hold to charge power, release to
 // shoot. The Kick clip winds up and freezes at the cocked pose while charging.
 export const STADIUM_POS = [0, 0.3, 3.0]
-// The GLB now ships a real goal frame (posts ±4.8, bar 3.9) at blender
-// y=12.82 -> GLB z=-12.82; the game plays on its line, not the tunnel mouth.
+// The GLB ships a real goal frame at blender y=12.82 -> GLB z=-12.82; the game
+// plays on its line, not the tunnel mouth. The frame is built with posts ±4.8 /
+// bar 3.9 then scaled ×1.415 in the Blender script, so in-scene the posts sit
+// at ±~6.8 and the bar at ~4.0. Aim box hugs just inside that: ball center max
+// ±6.1 (ball radius keeps it off the post), top 3.9 under the bar.
 export const GOAL_Z = -12.82
-export const GOAL_HALF_W = 4.6
-export const GOAL_TOP = 3.6
+export const GOAL_HALF_W = 6.1
+export const GOAL_TOP = 3.9
 export const BALL_R = 0.39
-export const BALL_START = new THREE.Vector3(-0.45, BALL_R, 17.9)
+export const BALL_START = new THREE.Vector3(0.6, BALL_R, 17.9)
 // Run-up: holding to charge also walks the player (Walk clip) from his mark
 // at PLAYER_POS to PLAYER_KICK_Z over RUN_UP_TIME; releasing kicks — if he's
 // still mid-approach he finishes the walk first, so the ball launches
@@ -28,19 +31,81 @@ export const KICK_CONTACT = 0.66
 export const CHARGE_TIME = 0.9
 export const FLIGHT_TIME_SLOW = 1.1
 export const FLIGHT_TIME_FAST = 0.5
-export const KEEPER_DIVE_X = 3.2
-export const KEEPER_REACH_X = 1.6
-export const KEEPER_REACH_Y = 3.0
-// Keeper sways side to side while you aim and (usually) dives with his lean —
-// read him and shoot the other way. Releasing in the gold band is a 'perfect'
-// strike the keeper can never save.
-export const KEEPER_SHUFFLE_X = 2.0
-export const KEEPER_SHUFFLE_SPEED = 1.7
-export const KEEPER_COMMIT_DEAD_ZONE = 0.8
+export const KEEPER_DIVE_X = 4.6
+// Base fingertip reach at full power; weak shots add up to +1.0 / +0.6.
+export const KEEPER_REACH_X = 1.7
+export const KEEPER_REACH_Y = 3.3
+// Keeper stands a step off his line, swivels to face your reticle and shades
+// a step toward your aim side while you charge (clamped so near-post stays
+// honest); releasing in the gold band is a 'perfect' strike he can never save.
+export const KEEPER_Z = GOAL_Z + 1.6
+export const KEEPER_SHADE = 0.22
+export const KEEPER_SHADE_MAX = 1.4
+// Chance the keeper reads your locked aim instead of guessing a zone.
+export const KEEPER_READ_CHANCE = 0.95
+// He reads the ball's true crossing point. Bend below BEND_GOOD is tracked
+// cleanly; only the excess (a genuinely good bend, i.e. late curl) drags his
+// dive the wrong way by excess * BEND_FOOL.
+export const KEEPER_BEND_GOOD = 1.5
+export const KEEPER_BEND_FOOL = 1.1
+// Beat of reaction time after the ball is struck before he dives — he reacts
+// to the ball, not your mouse release. Slow shots give him longer to read
+// (delay = KEEPER_REACT + (1 - power) * 0.08).
+export const KEEPER_REACT = 0.08
+// Curl: press locks the aim, dragging sideways while charging bends the shot.
+// bend = lateral flight offset peaking mid-flight (x += bend * sin(k*pi)).
+export const BEND_MAX = 4
+export const BEND_SCALE = 9
 export const PERFECT_MIN = 0.86
 export const PERFECT_MAX = 0.97
+
+// Tournament: three scripted rounds, keeper harder each time. Rounds 1-2 swap
+// the bear for a giant tinted fan blob (procedural dive lean in Game); the
+// final boss is the animated bear at max difficulty. Practice = current tuning.
+// keeper: readChance/reachX/reachY/react override the KEEPER_* baselines,
+// scale multiplies the keeper's resting size.
+export const ROUNDS = [
+  {
+    name: 'Red Blobs',
+    tint: '#ff5a4d',
+    goalie: 'blob',
+    keeper: { readChance: 0.55, reachX: 1.1, reachY: 2.7, react: 0.26, scale: 0.95 },
+  },
+  {
+    name: 'Green Blobs',
+    tint: '#43d96b',
+    goalie: 'blob',
+    keeper: { readChance: 0.8, reachX: 1.45, reachY: 3.1, react: 0.15, scale: 1.1 },
+  },
+  {
+    name: 'Bears',
+    tint: null,
+    goalie: 'bear',
+    keeper: { readChance: 0.98, reachX: 1.85, reachY: 3.45, react: 0.05, scale: 1.05 },
+  },
+]
+export const MATCH_SHOTS = 5
+export const MATCH_GOALS_TO_WIN = 3
+// Practice = the easiest keeper (Red Blobs), so newcomers can score.
+export const PRACTICE_CFG = {
+  name: 'Practice',
+  tint: '#ff5a4d',
+  goalie: 'blob',
+  keeper: { readChance: 0.55, reachX: 1.1, reachY: 2.7, react: 0.26, scale: 0.95 },
+}
 export const FIRE_POOL = 56
 export const FAN_SHADOW_Y_OFFSET = 0.06
+
+// Goal net box: roof slopes from the crossbar down to a low back frame (real
+// net silhouette). Shared by GoalNet (geometry) and Game (ball-vs-net collision).
+export const NET_HALF_W = GOAL_HALF_W + 0.7 // reach the scaled post centers (±6.8)
+export const NET_FRONT_Z = GOAL_Z - 0.12
+export const NET_DEPTH = 3.0
+export const NET_BACK_Z = NET_FRONT_Z - NET_DEPTH
+export const NET_BACK_H = 2.0
+// Net roof height at depth z (clamped lerp crossbar -> back frame).
+export const netRoofY = (z) =>
+  THREE.MathUtils.lerp(GOAL_TOP, NET_BACK_H, THREE.MathUtils.clamp((NET_FRONT_Z - z) / NET_DEPTH, 0, 1))
 
 // World-space goal plane for pointer-ray aiming (local GOAL_Z + group z offset).
 export const GOAL_PLANE = new THREE.Plane(new THREE.Vector3(0, 0, 1), -(GOAL_Z + STADIUM_POS[2]))

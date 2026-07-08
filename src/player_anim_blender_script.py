@@ -1,10 +1,13 @@
-"""Add Kick + Celebrate actions to main-player.blend rig, render previews, export GLB.
-Run: Blender -b main-player.blend -P animate_player.py -- [--export]
+"""Author Kick/Celebrate/Idle/Walk/Run actions + MouthHappy/MouthSad shape keys
+on the main-player.blend rig, render previews, export GLB.
+Run: Blender -b main-player.blend -P player_anim_blender_script.py -- [--export]
 World-axis rotation conventions (character faces +X, verified via renders):
   legs/arms hanging down: +Y = swing backward, -Y = swing forward; knee flex = +Y
   left arm (bone +Y):  X + = raise up, X - = lower to side
   right arm (bone -Y): X - = raise up, X + = lower to side
   foot (bone +X): +Y = toe down
+  BIND POSE IS A T-POSE: upperarm X angles are measured from horizontal, not
+  from hanging — X +34 on a raised arm is already a wide V above the head.
 """
 import bpy, sys, math
 from mathutils import Matrix
@@ -99,9 +102,13 @@ kick = make_action("Kick", [
 ])
 
 # ---- CELEBRATE (~60f) ----
-ARMS_UP = [("L_Clavicle", X, 15), ("R_Clavicle", X, -15),
-           ("L_Upperarm", X, 55), ("R_Upperarm", X, -55),
-           ("L_Forearm", X, 15), ("R_Forearm", X, -15)]
+# Bind pose is a T-pose, so upperarm X raise is measured from horizontal.
+# Wide V (~34deg above horizontal + open clavicles) keeps the hands clear of
+# the oversized chibi head; slight Y tilt pulls them forward off the hair.
+ARMS_UP = [("L_Clavicle", X, 22), ("R_Clavicle", X, -22),
+           ("L_Upperarm", X, 34), ("R_Upperarm", X, -34),
+           ("L_Upperarm", Y, 10), ("R_Upperarm", Y, 10),
+           ("L_Forearm", X, 20), ("R_Forearm", X, -20)]
 CROUCH = [
     ("Spine01", Y, -14),
     ("L_Thigh", Y, -50), ("R_Thigh", Y, -50),
@@ -180,7 +187,91 @@ walk = make_action("Walk", [
     (25, -0.008, step("R", "L")),
 ])
 
+# ---- RUN (20f seamless sprint loop, in-place; run-up before the kick) ----
+def step_run(fwd, back):
+    return [
+        ("Spine01", Y, -14), ("Spine02", Y, -4), ("Head", Y, 6),
+        (f"{fwd}_Thigh", Y, -55), (f"{fwd}_Calf", Y, 20), (f"{fwd}_Foot", Y, -8),
+        (f"{back}_Thigh", Y, 35), (f"{back}_Calf", Y, 55), (f"{back}_Foot", Y, 18),
+        ("L_Upperarm", X, -55), ("R_Upperarm", X, 55),
+        (f"{fwd}_Upperarm", Y, 35), (f"{back}_Upperarm", Y, -35),
+        ("L_Forearm", Y, -60), ("R_Forearm", Y, -60),  # arms pump bent at 90
+    ]
+
+def pass_run(swing, stance):
+    return [
+        ("Spine01", Y, -12), ("Spine02", Y, -3), ("Head", Y, 5),
+        (f"{swing}_Thigh", Y, -38), (f"{swing}_Calf", Y, 95), (f"{swing}_Foot", Y, -12),
+        (f"{stance}_Thigh", Y, 10), (f"{stance}_Calf", Y, 12),
+        ("L_Upperarm", X, -55), ("R_Upperarm", X, 55),
+        ("L_Forearm", Y, -55), ("R_Forearm", Y, -55),
+    ]
+
+run = make_action("Run", [
+    (1, -0.018, step_run("R", "L")),
+    (6, 0.02, pass_run("L", "R")),
+    (11, -0.018, step_run("L", "R")),
+    (16, 0.02, pass_run("R", "L")),
+    (21, -0.018, step_run("R", "L")),
+])
+
 bpy.ops.object.mode_set(mode="OBJECT")
+
+# ---- mouth shape keys (MouthHappy / MouthSad) ----
+# Gaussian-weighted displacement around the mouth (front of face = +X,
+# mouth center y=0 z=0.675 in rest space). Happy: corners up+out, grin opens.
+# Sad: opening squashed toward its centerline (>0.3 crushes the teeth through
+# the lips), corners drag down, mouth narrows and recedes.
+import numpy as np
+
+MESH = next(ob for ob in bpy.data.objects
+            if ob.type == "MESH" and any(m.type == "ARMATURE" for m in ob.modifiers))
+
+def build_mouth_keys():
+    MESH.shape_key_clear()
+    MESH.shape_key_add(name="Basis")
+    n = len(MESH.data.vertices)
+    co = np.empty(n * 3)
+    MESH.data.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    CY, CZ = 0.0, 0.675
+    front = co[:, 0] > 0.10
+    w = np.exp(-((co[:, 1] - CY) ** 2 / (2 * 0.055 ** 2) + (co[:, 2] - CZ) ** 2 / (2 * 0.042 ** 2))) * front
+    # nose mask: the nose bulges past the lip surface (x > ~0.19) in the band
+    # just above the mouth (z 0.66-0.725); fade w to 0 there so neither morph
+    # drags the nose (it used to smear sideways/down -> creepy)
+    nose_band = np.clip((co[:, 2] - 0.660) / 0.012, 0, 1) * np.clip((0.725 - co[:, 2]) / 0.012, 0, 1)
+    nose_bulge = np.clip((co[:, 0] - 0.185) / 0.012, 0, 1)
+    w *= 1 - nose_band * nose_bulge
+    # the x>0.185 bulge mask misses the central philtrum + nose underside
+    # (x~0.17-0.185, y~0): the forward/up push there dragged the whole nose
+    # into a lump. Kill weight for central verts above the mouth so only the
+    # lateral smile corners move up there (nose stays put, smile survives).
+    central = np.clip((0.030 - np.abs(co[:, 1])) / 0.030, 0, 1)   # 1 at center -> 0 by |y|=0.03
+    high = np.clip((co[:, 2] - 0.640) / 0.040, 0, 1)              # 0 at mouth -> 1 by z=0.68
+    w *= 1 - central * high
+    corner = np.clip(np.abs(co[:, 1]) / 0.07, 0, 1)  # 0 center -> 1 corners
+    sy = np.sign(co[:, 1])
+
+    happy = np.zeros_like(co)
+    happy[:, 2] += w * corner * 0.030          # corners lift
+    happy[:, 1] += w * sy * 0.022              # widen
+    happy[:, 0] += w * 0.010                   # cheek/lip push out
+    lower = co[:, 2] < CZ
+    happy[:, 2] -= w * (1 - corner) * lower * 0.012  # drop lower-center: open grin
+
+    sad = np.zeros_like(co)
+    sad[:, 2] += w * (CZ - co[:, 2]) * 0.28    # squash the opening shut-ish
+    sad[:, 2] -= w * corner * 0.032            # corners down
+    sad[:, 1] -= w * sy * 0.012                # narrow
+    sad[:, 0] -= w * 0.006                     # recede
+
+    for name, disp in (("MouthHappy", happy), ("MouthSad", sad)):
+        sk = MESH.shape_key_add(name=name, from_mix=False)
+        sk.data.foreach_set("co", (co + disp).reshape(-1))
+    MESH.data.update()
+
+build_mouth_keys()
 
 # ---- previews ----
 scn = bpy.context.scene
@@ -209,11 +300,14 @@ render_frames(kick, [1, 10, 16, 22], "kick")
 render_frames(celebrate, [7, 16, 23], "cele")
 render_frames(celebrate, [16, 38], "celef", view="front")
 render_frames(walk, [1, 7, 13], "walk")
+render_frames(run, [1, 6, 11], "run")
 
 # ---- export ----
 if EXPORT:
     ARM.animation_data.action = None
-    for act in (kick, celebrate, idle, walk):
+    for tr in list(ARM.animation_data.nla_tracks):
+        ARM.animation_data.nla_tracks.remove(tr)
+    for act in (kick, celebrate, idle, walk, run):
         tr = ARM.animation_data.nla_tracks.new()
         tr.name = act.name
         tr.strips.new(act.name, 1, act)

@@ -14,7 +14,7 @@ import { makeFanShadowTexture } from '../utils/textures'
 // three (x, z, -y).
 // ponytail: one teal palette for all fans; kept as an array so the seeded shading variety stays
 // const FAN_BLUE_COLS = ['#3FD0D6', '#2FB9C4', '#66E0E0', '#48C9D9', '#7AE5E0', '#1FA8B8']
-const FAN_BLUE_COLS = ['pink']
+const FAN_BLUE_COLS = ['pink', 'white']
 const FAN_RED_COLS = FAN_BLUE_COLS
 const TIER_TOP = (tier) => 1.4 + 1.1 * tier
 const SIDE_FAN_YAW = Math.PI / 2
@@ -45,6 +45,7 @@ export function Crowd() {
             y: TIER_TOP(tier),
             z,
             yaw: -side * SIDE_FAN_YAW,
+            tier,
           })
         }
       }
@@ -55,7 +56,7 @@ export function Crowd() {
         if (Math.abs(x) < 6.8 && TIER_TOP(tier) < 6.5) continue
         if (rand() < CROWD_SKIP_CHANCE) continue
         const z = -(27.8 + 2.4 * tier + (rand() - 0.5))
-        spots.push({ x, y: TIER_TOP(tier), z, yaw: 0 })
+        spots.push({ x, y: TIER_TOP(tier), z, yaw: 0, tier })
       }
     }
 
@@ -128,7 +129,21 @@ export function Crowd() {
       dummy.scale.set(scale, heightScale, scale)
       dummy.updateMatrix()
       blobs.setMatrixAt(i, dummy.matrix)
-      blobs.setColorAt(i, color.set(fanColors[(rand() * fanColors.length) | 0]))
+
+      // Break up the flat pink/white: tiny per-fan HSL jitter for depth (not
+      // rainbow), then darken upper/rear tiers so the crowd recedes (atmospheric
+      // depth without fog). ponytail: single InstancedMesh material, so color is
+      // the only per-instance knob — roughness variation would need a shader hack.
+      color.set(fanColors[(rand() * fanColors.length) | 0])
+      const hsl = { h: 0, s: 0, l: 0 }
+      color.getHSL(hsl)
+      color.setHSL(
+        hsl.h + THREE.MathUtils.randFloatSpread(0.015),
+        THREE.MathUtils.clamp(hsl.s * (0.85 + rand() * 0.2), 0, 1),
+        THREE.MathUtils.clamp(hsl.l * (0.9 + rand() * 0.18), 0, 1),
+      )
+      color.multiplyScalar(1 - spot.tier * 0.06)
+      blobs.setColorAt(i, color)
 
       if (morphProxy.morphTargetInfluences) {
         morphProxy.morphTargetInfluences.fill(0)
@@ -162,6 +177,18 @@ export function Crowd() {
     setCrowdMode(CROWD_CELEBRATION)
     clearTimeout(calmTimer.current)
     calmTimer.current = setTimeout(() => setCrowdMode(CROWD_IDLE), 4500)
+  })
+
+  // Match won: the crowd parties through the result/champion screens.
+  useStadiumEvent('stadium:matchend', (event) => {
+    if (!event.detail?.win) return
+    clearTimeout(calmTimer.current)
+    setCrowdMode(CROWD_CELEBRATION)
+  })
+
+  useStadiumEvent('stadium:matchstart', () => {
+    clearTimeout(calmTimer.current)
+    setCrowdMode(CROWD_IDLE)
   })
 
   useEffect(() => () => clearTimeout(calmTimer.current), [])

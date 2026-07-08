@@ -33,43 +33,54 @@ export const makePlayerShadowTexture = () =>
     [1, 'rgba(45, 90, 150, 0)'],
   ])
 
-export function makeGoalNetTexture(columns, rows) {
+// One seamless diamond-mesh cell (both diagonals + knots at the crossings);
+// panels tile it via RepeatWrapping with UVs in world-units / cell-size.
+export function makeGoalNetTexture() {
   const canvas = document.createElement('canvas')
-  canvas.width = 512
-  canvas.height = 512
+  const S = 128
+  canvas.width = S
+  canvas.height = S
   const ctx = canvas.getContext('2d')
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.clearRect(0, 0, S, S)
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
 
-  const drawGrid = (strokeStyle, lineWidth) => {
+  const drawCords = (strokeStyle, lineWidth) => {
     ctx.strokeStyle = strokeStyle
     ctx.lineWidth = lineWidth
-
-    for (let x = 0; x <= columns; x++) {
-      const px = (x / columns) * canvas.width
+    for (const [x1, y1, x2, y2] of [
+      [0, 0, S, S],
+      [0, S, S, 0],
+    ]) {
       ctx.beginPath()
-      ctx.moveTo(px, 0)
-      ctx.lineTo(px, canvas.height)
-      ctx.stroke()
-    }
-
-    for (let y = 0; y <= rows; y++) {
-      const py = (y / rows) * canvas.height
-      ctx.beginPath()
-      ctx.moveTo(0, py)
-      ctx.lineTo(canvas.width, py)
+      ctx.moveTo(x1, y1)
+      ctx.lineTo(x2, y2)
       ctx.stroke()
     }
   }
 
-  drawGrid('rgba(58, 112, 188, 0.24)', 11)
-  drawGrid('rgba(245, 252, 255, 0.82)', 5)
+  const drawKnots = (fillStyle, r) => {
+    ctx.fillStyle = fillStyle
+    // Crossings: tile center + the four corners (wrapped).
+    for (const [x, y] of [[S / 2, S / 2], [0, 0], [S, 0], [0, S], [S, S]]) {
+      ctx.beginPath()
+      ctx.arc(x, y, r, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+
+  // Soft blue-grey shadow pass under the bright cord gives the mesh depth.
+  drawCords('rgba(58, 112, 188, 0.28)', 13)
+  drawKnots('rgba(58, 112, 188, 0.3)', 9)
+  drawCords('rgba(246, 252, 255, 0.9)', 5.5)
+  drawKnots('rgba(255, 255, 255, 0.95)', 5)
 
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
-  texture.anisotropy = 4
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.anisotropy = 8
   return texture
 }
 

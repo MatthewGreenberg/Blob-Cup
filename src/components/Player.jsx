@@ -10,8 +10,17 @@ import { makePlayerShadowTexture } from '../utils/textures'
 const PLAYER_GOAL_YAW = Math.PI / 2
 const PLAYER_CAMERA_YAW = -Math.PI / 2
 
-// public/player.glb: rigged kicker with 'Kick' and 'Celebrate' clips. Model
-// faces +X, so yaw +90deg points him down the lane at the tunnel (-z).
+// Mouth-morph targets live at module scope (Player is a singleton) so leva
+// button closures created in render don't touch a ref (react-hooks/refs).
+const EMOTION = { happy: 0, sad: 0 }
+const setEmotion = (happy, sad) => {
+  EMOTION.happy = happy
+  EMOTION.sad = sad
+}
+
+// public/player.glb: rigged kicker with Kick/Celebrate/Idle/Walk/Run clips and
+// MouthHappy/MouthSad morph targets. Model faces +X, so yaw +90deg points him
+// down the lane at the tunnel (-z).
 export function Player() {
   const { scene, animations } = useGLTF('/player.glb')
   const group = useRef(null)
@@ -30,14 +39,29 @@ export function Player() {
     setTargetYaw(PLAYER_GOAL_YAW)
   }
 
+  // Mouth morphs: faceRef holds the skinned mesh + morph indices; useFrame
+  // damps its morphTargetInfluences toward EMOTION (smooth emotion fades).
+  const faceRef = useRef(null)
+  useLayoutEffect(() => {
+    scene.traverse((object) => {
+      if (faceRef.current || !object.isMesh || object.morphTargetDictionary?.MouthHappy === undefined) return
+      faceRef.current = {
+        mesh: object,
+        happy: object.morphTargetDictionary.MouthHappy,
+        sad: object.morphTargetDictionary.MouthSad,
+      }
+    })
+  }, [scene])
+
   const celebrate = () => {
     setTargetYaw(PLAYER_CAMERA_YAW)
+    setEmotion(1, 0)
     return play('Celebrate', true)
   }
 
   const { playerScale, shadowEnabled, shadowColor, shadowOpacity, shadowY, shadowScaleX, shadowScaleZ } =
     useControls('player', {
-      playerScale: { value: 3.5, min: 0.5, max: 8, step: 0.1, label: 'scale' },
+      playerScale: { value: 2.8, min: 0.5, max: 8, step: 0.1, label: 'scale' },
       shadowEnabled: { value: true, label: 'shadow' },
       shadowColor: { value: '#000000', label: 'shadow color' },
       shadowOpacity: { value: 0.9, min: 0, max: 1, step: 0.01, label: 'shadow opacity' },
@@ -53,10 +77,17 @@ export function Player() {
         faceGoal()
         play('Walk')
       }),
+      run: button(() => {
+        faceGoal()
+        play('Run')
+      }),
       idle: button(() => {
         faceGoal()
         play('Idle')
       }),
+      happy: button(() => setEmotion(1, 0)),
+      sad: button(() => setEmotion(0, 1)),
+      neutral: button(() => setEmotion(0, 0)),
     })
 
   // Run-up / walk-back: a single timed walk that ends in either the Kick
@@ -64,25 +95,28 @@ export function Player() {
   const walkRef = useRef(null)
 
   useLayoutEffect(() => {
-    walkRef.current ??= { active: false, t: 0, fromZ: PLAYER_POS[2], toZ: PLAYER_KICK_Z, dur: RUN_UP_TIME, arrive: 'kick' }
+    walkRef.current ??= { active: false, t: 0, fromZ: PLAYER_POS[2], toZ: PLAYER_KICK_Z, dur: RUN_UP_TIME, arrive: 'kick', celebrating: false }
   }, [])
 
   useLayoutEffect(() => {
     actions.Idle?.play()
     // A faded-out LoopOnce clip (e.g. Celebrate cut short by the walk-back)
     // still runs to its end and fires 'finished' — don't let it stomp an
-    // active Walk with Idle.
+    // active Walk with Idle. While a match win is being celebrated, chain
+    // Celebrate one-shots (reset+fadeIn smooths the loop point) instead.
     const onFinished = () => {
-      if (!walkRef.current?.active) play('Idle')
+      const walk = walkRef.current
+      if (walk?.celebrating) play('Celebrate', true)
+      else if (!walk?.active) play('Idle')
     }
     mixer.addEventListener('finished', onFinished)
     return () => mixer.removeEventListener('finished', onFinished)
   })
 
-  const startWalk = (toZ, dur, arrive, timeScale) => {
+  const startWalk = (toZ, dur, arrive, timeScale, clip = 'Walk') => {
     const walk = walkRef.current
     if (!walk || !group.current) return
-    play('Walk').timeScale = timeScale
+    play(clip).timeScale = timeScale
     walk.active = true
     walk.t = 0
     walk.fromZ = group.current.position.z
@@ -92,10 +126,11 @@ export function Player() {
   }
 
   useStadiumEvent('stadium:windup', () => {
-    // Holding charges AND walks him up to the ball; he idles there if the
-    // hold outlasts the approach.
+    // Holding charges AND runs him up to the ball; he idles there if the
+    // hold outlasts the approach. Run loop is 20f/24fps = 0.83s, ~one full
+    // stride cycle over RUN_UP_TIME.
     faceGoal()
-    startWalk(PLAYER_KICK_Z, RUN_UP_TIME, 'idle', 1.6)
+    startWalk(PLAYER_KICK_Z, RUN_UP_TIME, 'idle', 1, 'Run')
   })
 
   useStadiumEvent('stadium:kick', () => {
@@ -107,12 +142,46 @@ export function Player() {
 
   useStadiumEvent('stadium:goal', celebrate)
 
+  useStadiumEvent('stadium:save', () => setEmotion(0, 1))
+
   useStadiumEvent('stadium:reset', () => {
+    if (walkRef.current?.celebrating) return // won the match — hold the party, no walk-back
+    setEmotion(0, 0)
     setTargetYaw(PLAYER_CAMERA_YAW)
     startWalk(PLAYER_POS[2], PLAYER_RETURN_TIME, 'idle', 1.2)
   })
 
-  useFrame((_, delta) => {
+  // Match won: cancel any walk-back and celebrate at the camera until the
+  // next match starts (onFinished re-chains the one-shot Celebrate clip).
+  // Order-safe vs stadium:reset either way — the flag skips a later walk-back,
+  // and cancelling walk.active kills an earlier one.
+  useStadiumEvent('stadium:matchend', (event) => {
+    const walk = walkRef.current
+    if (!event.detail?.win || !walk) return
+    walk.active = false
+    walk.celebrating = true
+    celebrate()
+  })
+
+  useStadiumEvent('stadium:matchstart', () => {
+    const walk = walkRef.current
+    if (!walk?.celebrating) return
+    walk.celebrating = false
+    // The win skipped the walk-back; snap to the mark while the camera is
+    // away on the bracket/menu screens.
+    if (group.current) group.current.position.z = PLAYER_POS[2]
+    setEmotion(0, 0)
+    faceGoal()
+    play('Idle')
+  })
+
+  useFrame((state, delta) => {
+    const face = faceRef.current
+    if (face) {
+      const influences = face.mesh.morphTargetInfluences
+      influences[face.happy] = THREE.MathUtils.damp(influences[face.happy], EMOTION.happy, 6, delta)
+      influences[face.sad] = THREE.MathUtils.damp(influences[face.sad], EMOTION.sad, 6, delta)
+    }
     const walk = walkRef.current
     if (walk?.active && group.current) {
       walk.t += delta
@@ -129,7 +198,10 @@ export function Player() {
       }
     }
     if (group.current) {
-      group.current.rotation.y = THREE.MathUtils.damp(group.current.rotation.y, targetYaw, 7, delta)
+      // Facing the goal, he leans his stance toward the pointer (screen-right
+      // = world +X = yaw below PLAYER_GOAL_YAW) — telegraphs the aim side.
+      const aimLean = targetYaw === PLAYER_GOAL_YAW ? -state.pointer.x * 0.22 : 0
+      group.current.rotation.y = THREE.MathUtils.damp(group.current.rotation.y, targetYaw + aimLean, 7, delta)
     }
   })
 
@@ -137,13 +209,37 @@ export function Player() {
     scene.traverse((object) => {
       if (!object.isMesh) return
       const old = object.material
-      object.material = new THREE.MeshPhysicalMaterial({
+      const mat = new THREE.MeshPhysicalMaterial({
         map: old.map,
         color: old.color,
-        roughness: 0.35,
+        roughness: 0.32,
         clearcoat: 1,
         clearcoatRoughness: 0.3,
+        sheen: 0.5,
+        sheenRoughness: 0.55,
+        sheenColor: new THREE.Color('#b9c4ff'),
       })
+      // The GLB is one mesh/one texture (no material slots), so uniform
+      // clearcoat plastic made him read as a Lego minifig. Split materials
+      // per-fragment by basecolor instead: blue kit → matte fabric w/ sheen,
+      // skin → soft semi-matte, hair/boots stay glossy toy plastic.
+      mat.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <lights_physical_fragment>',
+          /* glsl */ `#include <lights_physical_fragment>
+          {
+            vec3 pc = diffuseColor.rgb;
+            float lum = dot(pc, vec3(0.299, 0.587, 0.114));
+            float cloth = smoothstep(0.03, 0.15, pc.b - max(pc.r, pc.g));
+            float skin = (1.0 - cloth) * smoothstep(0.06, 0.2, pc.r - pc.b) * smoothstep(0.3, 0.48, lum);
+            material.roughness = mix(material.roughness, 0.78, cloth);
+            material.roughness = mix(material.roughness, 0.55, skin);
+            material.clearcoat *= 1.0 - cloth * 0.92 - skin * 0.65;
+            material.sheenColor *= cloth;
+          }`,
+        )
+      }
+      object.material = mat
     })
   }, [scene])
 

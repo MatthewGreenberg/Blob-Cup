@@ -35,7 +35,7 @@ BAKE_MARGIN_PX = 8
 # the whole scene is built, before bake/export — tweak, re-render, then bake.
 # Scales about each object's origin, so it stays planted where it was placed.
 RESIZE = {
-    "Scoreboard": 2.772,
+    "Scoreboard": 2.1,
     # "Goal": 1.15,
 }
 
@@ -168,20 +168,22 @@ def grass_mat(name, hexbase):
     nt = m.node_tree
     b = nt.nodes["Principled BSDF"]
     b.inputs["Roughness"].default_value = 0.82
-    # Animal Crossing look: flat solid green with a fine, sparse, slightly
-    # lighter speckle — tiny dots, low contrast, no bump
+    # turf look: fine dense speckle with dark AND light flecks over the base
+    # green — reads as mown grass blades at distance, still flat (no bump)
     tc = nt.nodes.new("ShaderNodeTexCoord")
     noise = nt.nodes.new("ShaderNodeTexNoise")
-    noise.inputs["Scale"].default_value = 26.0
-    noise.inputs["Detail"].default_value = 0.5
+    noise.inputs["Scale"].default_value = 70.0
+    noise.inputs["Detail"].default_value = 2.0
     noise.inputs["Roughness"].default_value = 0.5
     noise.inputs["Distortion"].default_value = 0.0
     ramp = nt.nodes.new("ShaderNodeValToRGB")
     ramp.color_ramp.interpolation = 'CONSTANT'
     ramp.color_ramp.elements[0].position = 0.0
-    ramp.color_ramp.elements[0].color = (*base, 1.0)
-    ramp.color_ramp.elements[1].position = 0.62
-    ramp.color_ramp.elements[1].color = (*[min(1.0, c * 1.10) for c in base], 1.0)
+    ramp.color_ramp.elements[0].color = (*[c * 0.90 for c in base], 1.0)
+    ramp.color_ramp.elements[1].position = 0.40
+    ramp.color_ramp.elements[1].color = (*base, 1.0)
+    light_el = ramp.color_ramp.elements.new(0.66)
+    light_el.color = (*[min(1.0, c * 1.09) for c in base], 1.0)
     L = nt.links
     L.new(tc.outputs["Object"], noise.inputs["Vector"])
     L.new(noise.outputs["Fac"], ramp.inputs["Fac"])
@@ -189,17 +191,18 @@ def grass_mat(name, hexbase):
     return m
 
 # ---------------------------------------------------------------- materials
-GRASS_A  = grass_mat("Grass_A", "#8CCB5E")
-GRASS_B  = grass_mat("Grass_B", "#74B84D")
+GRASS_A  = grass_mat("Grass_A", "#7CC24F")   # richer, less pastel than the old
+GRASS_B  = grass_mat("Grass_B", "#63A83F")   # candy greens — reference turf
 LINE     = mat("Line_White", "#FBFBF3", 0.5)
 CURB     = mat("Curb_White", "#FFF8EE", 0.45)
 DARK     = mat("Tunnel_Dark", "#1E1424", 0.8)
 PINK_TUN = mat("Tunnel_Pink", "#F390B4", 0.45)
+DEEP_PINK = mat("Trim_DeepPink", "#C24A78", 0.4)
 MINT_TRIM = mat("Trim_Mint", "#79D6C3", 0.4)
 GOLD     = mat("Gold", "#F2BE4A", 0.35)
 SLATE    = mat("Floodlight_Head", "#4A4458", 0.5)
 POLE     = mat("Pole_White", "#F4F1EA", 0.4)
-GLOW     = mat("Floodlight_Glow", "#FFF6DC", 0.3, emit=50.0)
+GLOW     = mat("Floodlight_Glow", "#FFF6DC", 0.3, emit=90.0)
 SCREEN   = mat("Scoreboard_Screen", "#CFF3FF", 0.3, emit=3.5)
 
 WALL_COLS = ["#F49FC0", "#FFF3E3", "#9FE3C0", "#FFF3E3"]
@@ -209,16 +212,19 @@ def cmat(prefix, hexcol, rough=0.55):
     return mat(f"{prefix}_{hexcol.lstrip('#')}", hexcol, rough)
 
 # ---------------------------------------------------------------- pitch
-LANE_W, LANE_L = 18.0, 46.0
-for i in range(6):
-    box(f"Pitch_Stripe_{i}", (3.0, LANE_L, 0.3), (-7.5 + 3 * i, 0, -0.15),
+# Mow stripes span the entire floor footprint (46x72, reaching the outer
+# walls) instead of a narrow lane on a plain apron — matches the reference.
+FLOOR_W, FLOOR_L, STRIPE_W = 46.0, 72.0, 3.0
+N_STRIPES = 16  # 16*3=48 > 46: half-stripe overhang each side hides behind the walls
+for i in range(N_STRIPES):
+    box(f"Pitch_Stripe_{i}", (STRIPE_W, FLOOR_L, 0.3),
+        (-FLOOR_W / 2 + STRIPE_W * (i + 0.5) - 1.0, 3, -0.15),
         GRASS_A if i % 2 == 0 else GRASS_B, C_PITCH)
-box("Pitch_Apron", (46, 72, 0.28), (0, 3, -0.141), GRASS_B, C_PITCH)  # top 1mm under stripes: coplanar look, still enough to avoid z-fight; reaches the outer wall
 
-for sx in (-1, 1):
-    box(f"Line_Side_{'L' if sx < 0 else 'R'}", (0.16, 44, 0.04), (sx * 8.7, 0, 0.02), LINE, C_PITCH)
-for i in range(13):
-    box(f"Line_Dash_{i}", (0.6, 0.16, 0.04), (-7.2 + 1.2 * i, 4.0, 0.02), LINE, C_PITCH)
+for sx in (-1, 1):  # sidelines run the whole floor, front edge to back wall
+    box(f"Line_Side_{'L' if sx < 0 else 'R'}", (0.16, FLOOR_L, 0.04), (sx * 8.7, 3, 0.02), LINE, C_PITCH)
+for i in range(15):  # dashes reach the sidelines at ±8.7
+    box(f"Line_Dash_{i}", (0.6, 0.16, 0.04), (-8.4 + 1.2 * i, 4.0, 0.02), LINE, C_PITCH)
 bpy.ops.mesh.primitive_torus_add(major_radius=2.0, minor_radius=0.09,
                                  major_segments=48, minor_segments=8, location=(0, -6, 0.02))
 circ = bpy.context.object
@@ -230,7 +236,7 @@ put(circ, C_PITCH)
 
 # penalty markings at the goal end (goal line sits at GOAL_Y=12.82)
 BOX_W, BOX_D = 14.0, 5.5
-box("Line_Goal", (BOX_W, 0.16, 0.04), (0, 12.82, 0.02), LINE, C_PITCH)
+box("Line_Goal", (17.56, 0.16, 0.04), (0, 12.82, 0.02), LINE, C_PITCH)  # sideline to sideline
 box("Line_Box_Front", (BOX_W, 0.16, 0.04), (0, 12.82 - BOX_D, 0.02), LINE, C_PITCH)
 for sx in (-1, 1):
     box(f"Line_Box_{'L' if sx < 0 else 'R'}", (0.16, BOX_D, 0.04),
@@ -293,9 +299,9 @@ for cut in (cut1, cut2):
     bpy.ops.object.modifier_apply(modifier=md.name)
     bpy.data.objects.remove(cut, do_unlink=True)
 
-half_torus("Tunnel_Trim", 2.8, 0.22, (0, 22.65, 3.3), MINT_TRIM, C_TUNNEL)
+half_torus("Tunnel_Trim", 2.8, 0.22, (0, 22.65, 3.3), DEEP_PINK, C_TUNNEL)
 for sx in (-1, 1):
-    cyl(f"Tunnel_TrimLeg_{'L' if sx < 0 else 'R'}", 0.22, 3.3, (sx * 2.8, 22.65, 1.65), MINT_TRIM, C_TUNNEL)
+    cyl(f"Tunnel_TrimLeg_{'L' if sx < 0 else 'R'}", 0.22, 3.3, (sx * 2.8, 22.65, 1.65), DEEP_PINK, C_TUNNEL)
 box("Tunnel_BackWall", (5.9, 0.4, 6.6), (0, 26.3, 3.3), DARK, C_TUNNEL)
 box("Tunnel_Floor", (5.9, 4.2, 0.12), (0, 25.0, 0.06), DARK, C_TUNNEL)
 
@@ -306,7 +312,7 @@ box("Tunnel_Floor", (5.9, 4.2, 0.12), (0, 25.0, 0.06), DARK, C_TUNNEL)
 # panels matching the crowd halves so it reads as a scoreboard, not a light.
 # Screen content (score) is rendered in three.js as a canvas overlay; the bake
 # only ships the frame + soft white backlight.
-SB_Y = 33.64
+SB_Y = 33.7
 sb = [box("Scoreboard_Frame", (10.5, 0.6, 4.0), (0, SB_Y, 13.62), SLATE, C_DECO, bev=0.12),
       box("Scoreboard_Screen", (9.4, 0.14, 3.0), (0, SB_Y - 0.35, 13.62), SCREEN, C_DECO)]
 sb = join(sb, "Scoreboard")
@@ -335,21 +341,31 @@ flagpole("Flagpole_R", 10.6, 14.0)
 flagpole("Flagpole_L", -10.6, -10.0)
 
 # ---------------------------------------------------------------- floodlights
+# Big stadium heads matching the reference: a wide slate frame holding a 4x3
+# grid of glowing square panels, tilted down at the pitch.
+HEAD_W, HEAD_H, COLS, ROWS, GAP = 4.4, 3.2, 4, 3, 0.22
 for k, (fx, fy) in enumerate(((-19, 33), (19, 33))):  # back pair only
     rz = atan2(-fy, -fx)
     tilt = radians(18)
-    parts = [cyl(f"Floodlight_{k}", 0.16, 11.5, (fx, fy, 5.75), POLE, C_DECO, verts=16)]
-    hb = box(f"_fh{k}", (0.7, 3.0, 1.7), (fx, fy, 11.6), SLATE, C_DECO, bev=0.08)
-    hb.rotation_euler = (0, tilt, rz)
-    off = (cos(tilt) * cos(rz) * 0.38, cos(tilt) * sin(rz) * 0.38, -sin(tilt) * 0.38)
-    pb = box(f"_fp{k}", (0.12, 2.7, 1.4), (fx + off[0], fy + off[1], 11.6 + off[2]), GLOW, C_DECO)
-    pb.rotation_euler = (0, tilt, rz)
-    parts += [hb, pb]
-    join(parts, f"Floodlight_{k}")
+    pole = cyl(f"Floodlight_{k}", 0.16, 11.5, (fx, fy, 5.75), POLE, C_DECO, verts=16)
+    # build the head flat at the origin, then rotate/park the whole assembly
+    head_parts = [box(f"_fh{k}", (0.7, HEAD_W, HEAD_H), (0, 0, 0), SLATE, C_DECO, bev=0.08)]
+    cw = (HEAD_W - GAP * (COLS + 1)) / COLS
+    ch = (HEAD_H - GAP * (ROWS + 1)) / ROWS
+    for ci in range(COLS):
+        for ri in range(ROWS):
+            head_parts.append(box(
+                f"_fc{k}_{ci}{ri}", (0.12, cw, ch),
+                (0.38, -HEAD_W / 2 + GAP + cw / 2 + ci * (cw + GAP),
+                 -HEAD_H / 2 + GAP + ch / 2 + ri * (ch + GAP)), GLOW, C_DECO))
+    head = join(head_parts, f"_fhead{k}")
+    head.rotation_euler = (0, tilt, rz)
+    head.location = (fx, fy, 12.0)
+    join([pole, head], f"Floodlight_{k}")
 
 # ---------------------------------------------------------------- light / world / camera
 sun = bpy.data.lights.new("Sun", 'SUN')
-sun.energy = 1.2
+sun.energy = 0.55                      # dimmed: floodlights carry the scene
 sun.angle = radians(3)
 sun.color = srgb("#FFE3B8")            # warm key, low for long shadows
 so = bpy.data.objects.new("Sun", sun)
@@ -358,7 +374,7 @@ bpy.context.scene.collection.objects.link(so)
 put(so, C_DECO)
 
 fill = bpy.data.lights.new("Sun_Fill", 'SUN')
-fill.energy = 0.3
+fill.energy = 0.15
 fill.angle = radians(30)
 fill.color = srgb("#BFD9FF")           # cool soft fill from the opposite side
 fo = bpy.data.objects.new("Sun_Fill", fill)
@@ -381,7 +397,7 @@ def spot(name, loc, target, energy):
 
 for k, (fx, fy) in enumerate(((-19, 33), (19, 33))):
     spot(f"Floodlight_Spot_{k}", (fx * 0.97, fy * 0.97, 11.4),
-         (fx * 0.15, fy * 0.2, 0), 22000)
+         (fx * 0.15, fy * 0.2, 0), 55000)
 
 world = bpy.context.scene.world or bpy.data.worlds.new("World")
 bpy.context.scene.world = world
@@ -405,7 +421,7 @@ if bg:
     L.new(sep.outputs["Z"], mr.inputs["Value"])
     L.new(mr.outputs["Result"], ramp.inputs["Fac"])
     L.new(ramp.outputs["Color"], bg.inputs[0])
-    bg.inputs[1].default_value = 0.45
+    bg.inputs[1].default_value = 0.22   # darker dusk sky, less ambient wash
 
 cam_data = bpy.data.cameras.new("Camera")
 cam_data.lens = 32
@@ -443,8 +459,8 @@ try:
     gl = g.nodes.new("CompositorNodeGlare")
     gl.inputs["Type"].default_value = 'Bloom'
     gl.inputs["Threshold"].default_value = 1.3
-    gl.inputs["Strength"].default_value = 0.35
-    gl.inputs["Size"].default_value = 0.55
+    gl.inputs["Strength"].default_value = 0.55
+    gl.inputs["Size"].default_value = 0.65
     g.links.new(img, gl.inputs["Image"])
     g.links.new(gl.outputs["Image"], gout.inputs["Image"])
     scene.compositing_node_group = g
