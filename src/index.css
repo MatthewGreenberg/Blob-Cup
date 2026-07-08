@@ -10,6 +10,7 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
 }
 
 * {
@@ -27,6 +28,12 @@ body,
 
 body {
   overflow: hidden;
+  /* game surface: no pull-to-refresh, long-press callouts or text selection
+     hijacking the press-and-drag shot gesture */
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 button,

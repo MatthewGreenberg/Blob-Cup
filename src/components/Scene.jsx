@@ -42,6 +42,18 @@ const SHOTS = {
   match: { pos: [0, 4.2, 38], target: [0, 0, -14], fov: 31, sway: 0 },
 }
 
+// The SHOTS are framed for landscape, but three.js fov is vertical — a portrait
+// phone keeps the vertical slice and crops the sides to a tunnel. Below the
+// reference aspect, widen the fov to preserve the horizontal frustum instead
+// (zooming the shot out), capped before wide-angle distortion sets in.
+const REF_ASPECT = 1.6
+const FOV_CAP = 68
+function aspectFov(fov, aspect) {
+  if (aspect >= REF_ASPECT) return fov
+  const halfH = Math.tan(THREE.MathUtils.degToRad(fov) / 2) * REF_ASPECT
+  return Math.min(FOV_CAP, THREE.MathUtils.radToDeg(2 * Math.atan(halfH / aspect)))
+}
+
 function CameraRig({ screen }) {
   const rigRef = useRef(null)
   // Tournament win → the result screen uses the celebration close-up.
@@ -104,7 +116,7 @@ function CameraRig({ screen }) {
     rig.target.y = THREE.MathUtils.damp(rig.target.y, shot.target[1], 2.4, delta)
     rig.target.z = THREE.MathUtils.damp(rig.target.z, shot.target[2], 2.4, delta)
     cam.lookAt(rig.target)
-    cam.fov = THREE.MathUtils.damp(cam.fov, shot.fov - 3.5 * c, 2, delta)
+    cam.fov = THREE.MathUtils.damp(cam.fov, aspectFov(shot.fov - 3.5 * c, state.size.width / state.size.height), 2, delta)
     cam.updateProjectionMatrix()
 
     if (rig.trauma > 0) {

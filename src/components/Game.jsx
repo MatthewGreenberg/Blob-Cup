@@ -71,6 +71,8 @@ previewDots.frustumCulled = false
 previewDots.renderOrder = 2
 previewDots.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
 const previewDummy = new THREE.Object3D()
+// Scratch NDC for the pointerdown aim raycast (touch has no hover).
+const POINTER_NDC = new THREE.Vector2()
 const previewBase = new THREE.Color()
 const previewColor = new THREE.Color()
 for (let i = 0; i < PREVIEW_N; i++) previewDots.setColorAt(i, previewColor) // allocate instanceColor
@@ -164,6 +166,8 @@ export function Game({ cfg = PRACTICE_CFG }) {
   // soccer-ball.glb ships KTX2-compressed textures, so its loader needs a
   // basis transcoder (served from public/basis/) wired in.
   const gl = useThree((state) => state.gl)
+  const camera = useThree((state) => state.camera)
+  const raycaster = useThree((state) => state.raycaster)
   const ballScene = useGLTF('/soccer-ball.glb', true, true, (loader) => {
     loader.setKTX2Loader(new KTX2Loader().setTranscoderPath('/basis/').detectSupport(gl))
   }).scene
@@ -327,6 +331,18 @@ export function Game({ cfg = PRACTICE_CFG }) {
       shot.power = 0.15
       shot.powerDir = 1
       shot.t = 0 // hold time doubles as the player's walk-up progress
+      // Touch has no hover, so aim from the actual press point (same raycast
+      // as the useFrame reticle follow) instead of wherever the reticle was
+      // left; the reticle snaps there so the lock reads correctly.
+      POINTER_NDC.set(
+        (event.clientX / window.innerWidth) * 2 - 1,
+        -(event.clientY / window.innerHeight) * 2 + 1,
+      )
+      raycaster.setFromCamera(POINTER_NDC, camera)
+      if (raycaster.ray.intersectPlane(GOAL_PLANE, AIM_HIT)) {
+        reticleRef.current.position.x = THREE.MathUtils.clamp(AIM_HIT.x, -GOAL_HALF_W, GOAL_HALF_W)
+        reticleRef.current.position.y = THREE.MathUtils.clamp(AIM_HIT.y - STADIUM_POS[1], 0.6, GOAL_TOP)
+      }
       // Press locks the aim; dragging sideways while charging draws the curl.
       shot.aim.copy(reticleRef.current.position)
       shot.bend = 0
@@ -391,7 +407,7 @@ export function Game({ cfg = PRACTICE_CFG }) {
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('pointercancel', onUp)
     }
-  }, [gl, cfg])
+  }, [gl, camera, raycaster, cfg])
 
   useFrame((state, delta) => {
     const shot = shotRef.current
