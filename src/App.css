@@ -431,6 +431,20 @@
   }
 }
 
+/* Champion: the trophy celebration close-up zooms out first (CameraRig
+   cupWin → champion), then the overlay fades in and the cup/title pop. */
+.ui-overlay--late {
+  animation-delay: 1.1s;
+}
+
+.ui-overlay--late .ui-cup {
+  animation-delay: 1.1s;
+}
+
+.ui-overlay--late .ui-title {
+  animation-delay: 1.25s;
+}
+
 .ui-title {
   color: #ffd23f;
   font-size: clamp(48px, 9vw, 110px);

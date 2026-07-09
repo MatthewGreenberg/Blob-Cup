@@ -43,6 +43,10 @@ export const KEEPER_SHADE = 0.22
 export const KEEPER_SHADE_MAX = 1.4
 // Chance the keeper reads your locked aim instead of guessing a zone.
 export const KEEPER_READ_CHANCE = 0.95
+// Below this power EVERY keeper reads the true crossing point perfectly and
+// the save is guaranteed — a lazy click never scores, even aimed at a corner.
+// Rounds can raise the floor via keeper.safePower (the bear demands real pace).
+export const KEEPER_WEAK_POWER = 0.45
 // He reads the ball's true crossing point. Bend below BEND_GOOD is tracked
 // cleanly; only the excess (a genuinely good bend, i.e. late curl) drags his
 // dive the wrong way by excess * BEND_FOOL.
@@ -74,7 +78,7 @@ export const ROUNDS = [
     name: 'Red Blobs',
     tint: '#ff5a4d',
     goalie: 'blob',
-    keeper: { readChance: 0.55, reachX: 1.1, reachY: 2.7, react: 0.26, scale: 0.95 },
+    keeper: { readChance: 0.55, reachX: 1.1, reachY: 2.7, react: 0.26, scale: 0.95, safePower: 0.45 },
     charge: 0.9,
     perfectMin: 0.87,
     perfectMax: 0.96,
@@ -83,20 +87,25 @@ export const ROUNDS = [
     name: 'Green Blobs',
     tint: '#43d96b',
     goalie: 'blob',
-    keeper: { readChance: 0.68, reachX: 1.28, reachY: 2.9, react: 0.2, scale: 1.05 },
+    keeper: { readChance: 0.68, reachX: 1.28, reachY: 2.9, react: 0.2, scale: 1.05, safePower: 0.5 },
     charge: 0.8,
     perfectMin: 0.875,
     perfectMax: 0.95,
   },
   {
-    // Same keeper as Green Blobs (round 2) — the gold zone shrinks one more notch.
+    // Final boss: near-perfect read, longest reach, fastest react, tightest gold
+    // zone. safePower 0.62 = anything short of a genuinely strong kick is caught,
+    // and bendGood 2.1 means only a REALLY good bend drags his dive — so he only
+    // concedes to the perfect band, a powerful corner ball, or big bend + pace.
     name: 'Bears',
     tint: null,
     goalie: 'bear',
-    keeper: { readChance: 0.68, reachX: 1.28, reachY: 2.9, react: 0.2, scale: 1.05 },
-    charge: 0.8,
-    perfectMin: 0.89,
-    perfectMax: 0.945,
+    // reachX stays under the corner gap (aim ±6.1 − dive clamp ±4.6 = 1.5) or a
+    // full-power corner ball could never score.
+    keeper: { readChance: 0.95, reachX: 1.35, reachY: 3.4, react: 0.1, scale: 1.1, safePower: 0.62, bendGood: 2.1 },
+    charge: 0.72,
+    perfectMin: 0.875,
+    perfectMax: 0.95,
   },
 ]
 export const MATCH_SHOTS = 5
@@ -106,7 +115,7 @@ export const PRACTICE_CFG = {
   name: 'Practice',
   tint: '#ff5a4d',
   goalie: 'blob',
-  keeper: { readChance: 0.55, reachX: 1.1, reachY: 2.7, react: 0.26, scale: 0.95 },
+  keeper: { readChance: 0.55, reachX: 1.1, reachY: 2.7, react: 0.26, scale: 0.95, safePower: 0.45 },
 }
 export const FIRE_POOL = 56
 export const FAN_SHADOW_Y_OFFSET = 0.06

@@ -96,8 +96,11 @@ export function Ui({ screen, setScreen, mode, setMode, round, setRound }) {
   const [outcome, setOutcome] = useState(null)
   const [intro, setIntro] = useState(null)
   const [paused, setPaused] = useState(false)
+  // Final win: hold the trophy/confetti close-up before the champion overlay.
+  const [celebrating, setCelebrating] = useState(false)
   const countsRef = useRef({ goals: 0, saves: 0, outcome: null, log: [] })
   const introTimer = useRef(null)
+  const celebrateTimer = useRef(null)
   const inMatch = screen === 'match' && mode === 'tournament'
 
   // Entrance: hold the menu back until the stadium is actually on screen
@@ -154,18 +157,29 @@ export function Ui({ screen, setScreen, mode, setMode, round, setRound }) {
   useStadiumEvent('stadium:reset', () => {
     const c = countsRef.current
     if (inMatch && c.outcome) {
-      // Camera, player and confetti react to this before the overlay lands.
-      emitStadiumEvent('stadium:matchend', {
-        win: c.outcome === 'win',
-        final: round >= ROUNDS.length - 1,
-      })
+      const final = round >= ROUNDS.length - 1
+      // Camera, player, trophy and confetti react to this before the overlay lands.
+      emitStadiumEvent('stadium:matchend', { win: c.outcome === 'win', final })
       setOutcome(c.outcome)
-      // Winning the final skips the round-result card and goes straight to the cup.
-      setScreen(c.outcome === 'win' && round >= ROUNDS.length - 1 ? 'champion' : 'result')
+      if (c.outcome === 'win' && final) {
+        // Winning the final holds the trophy close-up (screen stays 'match',
+        // camera on the cupWin shot, confetti + spinning trophy) before the
+        // camera zooms out to the champion shot and the overlay fades in.
+        setCelebrating(true)
+        clearTimeout(celebrateTimer.current)
+        celebrateTimer.current = setTimeout(() => {
+          setCelebrating(false)
+          setScreen('champion')
+        }, 4600)
+      } else setScreen('result')
     }
   })
+  useEffect(() => () => clearTimeout(celebrateTimer.current), [])
 
   if (screen === 'match') {
+    // Celebration hold: hide the HUD and block canvas input (transparent,
+    // pointer-events like the full overlays) while the trophy beat plays.
+    if (celebrating) return <div style={{ position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'auto' }} />
     return (
       <>
         {intro && (
@@ -267,7 +281,8 @@ export function Ui({ screen, setScreen, mode, setMode, round, setRound }) {
   if (!entered && screen === 'menu') return null
 
   return (
-    <div className="ui-overlay">
+    // Champion: delay the fade/pops so the camera zoom-out plays first.
+    <div className={`ui-overlay${screen === 'champion' ? ' ui-overlay--late' : ''}`}>
       {screen === 'menu' && (
         <>
           <div>

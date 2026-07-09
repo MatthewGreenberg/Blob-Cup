@@ -10,6 +10,7 @@ import { CameraSnapshot } from './CameraSnapshot'
 import { Confetti } from './Confetti'
 import { Sky } from './Sky'
 import { Stadium } from './Stadium'
+import { Trophy } from './Trophy'
 
 const DEBUG = new URLSearchParams(window.location.search).has('debug')
 
@@ -38,6 +39,10 @@ const SHOTS = {
   // Win: hero close-up on the celebrating player (he holds at world z≈23 after
   // the winning shot — the walk-back is skipped), slow arc around him.
   resultWin: { pos: [2.8, 3.1, 29.8], target: [0, 2.7, 23], fov: 33, sway: 0.2 },
+  // Final win: same hero arc but framed taller — the trophy spins above his
+  // head (Trophy.jsx, top ≈ y 6 with bob), held while Ui delays the champion
+  // overlay; the champion shot then IS the zoom-out.
+  cupWin: { pos: [2.9, 3.9, 30.9], target: [0, 3.3, 23], fov: 42, sway: 0.18 },
   champion: { pos: [-3.6, 4.4, 30.6], target: [0, 3, 23], fov: 38, sway: 0.16 },
   match: { pos: [0, 4.2, 38], target: [0, 0, -14], fov: 31, sway: 0 },
   // Portrait phones: pull in behind the kicker and tilt UP off the grass for a
@@ -59,10 +64,14 @@ function aspectFov(fov, aspect) {
 
 function CameraRig({ screen }) {
   const rigRef = useRef(null)
-  // Tournament win → the result screen uses the celebration close-up.
-  const [won, setWon] = useState(false)
-  useStadiumEvent('stadium:matchend', (event) => setWon(!!event.detail?.win))
-  useStadiumEvent('stadium:matchstart', () => setWon(false))
+  // Tournament win → the result screen uses the celebration close-up; a FINAL
+  // win holds the taller trophy shot while Ui delays the champion overlay
+  // (screen stays 'match' through the hold).
+  const [won, setWon] = useState(null)
+  useStadiumEvent('stadium:matchend', (event) =>
+    setWon(event.detail?.win ? { final: !!event.detail?.final } : null),
+  )
+  useStadiumEvent('stadium:matchstart', () => setWon(null))
   useLayoutEffect(() => {
     rigRef.current ??= { target: new THREE.Vector3(0, 0, -14), pos: new THREE.Vector3(), trauma: 0, charge: 0, charging: false, ready: false }
   }, [])
@@ -92,14 +101,19 @@ function CameraRig({ screen }) {
     const rig = rigRef.current
     if (!rig) return
     const portrait = state.size.width / state.size.height < REF_ASPECT
-    const key = screen === 'result' && won ? 'resultWin' : screen
+    const key =
+      won?.final && (screen === 'match' || screen === 'result')
+        ? 'cupWin'
+        : screen === 'result' && won
+          ? 'resultWin'
+          : screen
     let shot = !rig.ready ? SHOTS.intro : (SHOTS[key] ?? SHOTS.match)
-    if (rig.ready && screen === 'match' && portrait) shot = SHOTS.matchMobile
+    if (rig.ready && key === 'match' && portrait) shot = SHOTS.matchMobile
     const time = state.clock.elapsedTime
     const cam = state.camera
 
-    // Pointer look during play, slow sway on the menu shots.
-    const yaw = screen === 'match' ? -state.pointer.x * 0.06 : Math.sin(time * 0.16) * shot.sway
+    // Pointer look during play (the sway:0 shots), slow sway everywhere else.
+    const yaw = shot.sway === 0 ? -state.pointer.x * 0.06 : Math.sin(time * 0.16) * shot.sway
     const ox = shot.pos[0] - shot.target[0]
     const oz = shot.pos[2] - shot.target[2]
     const angle = Math.atan2(ox, oz) + yaw
@@ -219,6 +233,7 @@ export function Scene({ cfg, screen }) {
           DOM <Loading /> overlay covers the boot */}
       <Suspense fallback={null}>
         <Stadium cfg={cfg} />
+        <Trophy screen={screen} />
         <ContactShadows
           frames={1} /* bake once: moving objects carry their own shadow planes */
           position={[0, -0.015, 0]}

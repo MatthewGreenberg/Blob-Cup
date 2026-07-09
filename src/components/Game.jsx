@@ -3,7 +3,7 @@ import { Trail, useAnimations, useGLTF } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useControls } from 'leva'
 import * as THREE from 'three'
-import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js'
+import { wireKTX2 } from '../game/ktx2'
 import {
   AIM_HIT,
   BALL_R,
@@ -24,6 +24,7 @@ import {
   KEEPER_DIVE_X,
   KEEPER_SHADE,
   KEEPER_SHADE_MAX,
+  KEEPER_WEAK_POWER,
   KEEPER_Z,
   KICK_CONTACT,
   NET_BACK_Z,
@@ -180,9 +181,7 @@ export function Game({ cfg = PRACTICE_CFG }) {
   const gl = useThree((state) => state.gl)
   const camera = useThree((state) => state.camera)
   const raycaster = useThree((state) => state.raycaster)
-  const ballScene = useGLTF('/soccer-ball.glb', true, true, (loader) => {
-    loader.setKTX2Loader(new KTX2Loader().setTranscoderPath('/basis/').detectSupport(gl))
-  }).scene
+  const ballScene = useGLTF('/soccer-ball.glb', true, true, (loader) => wireKTX2(loader, gl)).scene
   const ballModel = useMemo(() => {
     const root = ballScene.clone(true)
     const mats = []
@@ -406,10 +405,14 @@ export function Game({ cfg = PRACTICE_CFG }) {
       // his dive the wrong way, and raw pace blurs his read (noise ~ power²).
       // Beat him with a good bend, real power to a corner, the perfect band,
       // or the rare wild guess — everything else is a save.
-      const read = Math.random() < cfg.keeper.readChance
-      const excess = Math.max(0, Math.abs(shot.bend) - KEEPER_BEND_GOOD)
-      const fool = -Math.sign(shot.bend) * excess * KEEPER_BEND_FOOL
-      const noise = (Math.random() - 0.5) * power * power * 1.6
+      // Soft ball = automatic save: below the round's power floor he reads the
+      // true crossing point dead-on (no guess, no fool, no noise) and the save
+      // check is skipped entirely — a lazy click never scores, corners included.
+      const weak = power < (cfg.keeper.safePower ?? KEEPER_WEAK_POWER)
+      const read = weak || Math.random() < cfg.keeper.readChance
+      const excess = Math.max(0, Math.abs(shot.bend) - (cfg.keeper.bendGood ?? KEEPER_BEND_GOOD))
+      const fool = weak ? 0 : -Math.sign(shot.bend) * excess * KEEPER_BEND_FOOL
+      const noise = weak ? 0 : (Math.random() - 0.5) * power * power * 1.6
       const predicted = read
         ? shot.crossX + fool + noise
         : (Math.floor(Math.random() * 3) - 1) * KEEPER_DIVE_X
@@ -417,7 +420,8 @@ export function Game({ cfg = PRACTICE_CFG }) {
 
       const reachX = cfg.keeper.reachX + (1 - power) * 1.0
       const reachY = cfg.keeper.reachY + (1 - power) * 0.6
-      shot.saved = !shot.perfect && !shot.over && Math.abs(shot.crossX - shot.diveX) < reachX && crossY < reachY
+      shot.saved =
+        !shot.perfect && !shot.over && (weak || (Math.abs(shot.crossX - shot.diveX) < reachX && crossY < reachY))
       shot.caught = shot.saved && Math.abs(shot.diveX) < 1 // central block: he hugs it
       // He dives a beat after contact — reacting to the ball, not the release.
       shot.dove = false
@@ -784,7 +788,9 @@ export function Game({ cfg = PRACTICE_CFG }) {
           <Trail
             width={fireControls.outerWidth + shotPower * fireControls.outerPowerWidth + (perfect ? fireControls.outerPerfectWidth : 0)}
             color={fireControls.outerColor}
-            length={fireControls.outerLength + shotPower * fireControls.outerPowerLength + (perfect ? fireControls.outerPerfectLength : 0)}
+            // Trail allocates length*30 floats; a fractional length truncates to a
+            // non-multiple-of-3 and meshline reads past the array end → NaN positions.
+            length={Math.round(fireControls.outerLength + shotPower * fireControls.outerPowerLength + (perfect ? fireControls.outerPerfectLength : 0))}
             decay={fireControls.outerDecay}
             attenuation={(width) => Math.pow(width, fireControls.attenuationPower)}
             target={ballRef}
@@ -792,7 +798,7 @@ export function Game({ cfg = PRACTICE_CFG }) {
           <Trail
             width={fireControls.innerWidth + shotPower * fireControls.innerPowerWidth + (perfect ? fireControls.innerPerfectWidth : 0)}
             color={perfect ? fireControls.perfectColor : fireControls.innerColor}
-            length={fireControls.innerLength + shotPower * fireControls.innerPowerLength}
+            length={Math.round(fireControls.innerLength + shotPower * fireControls.innerPowerLength)}
             decay={fireControls.innerDecay}
             attenuation={(width) => Math.pow(width, fireControls.attenuationPower)}
             target={ballRef}
