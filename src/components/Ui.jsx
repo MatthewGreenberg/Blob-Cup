@@ -245,7 +245,7 @@ export function Ui({ screen, setScreen, mode, setMode, round, setRound }) {
         </button>
         {paused && (
           <div className="ui-overlay">
-            <div className="ui-menu">
+            <div className="ui-menu ui-pause-stack">
               <button
                 type="button"
                 className="ui-btn ui-btn--primary"
@@ -293,7 +293,7 @@ export function Ui({ screen, setScreen, mode, setMode, round, setRound }) {
 
   return (
     // Champion: delay the fade/pops so the camera zoom-out plays first.
-    <div className={`ui-overlay${screen === 'champion' ? ' ui-overlay--late' : ''}`}>
+    <div className={`ui-overlay${screen === 'champion' ? ' ui-overlay--late' : ''}${screen === 'menu' ? ' ui-overlay--menu' : ''}`}>
       {screen === 'menu' && (
         <>
           <div>

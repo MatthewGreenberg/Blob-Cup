@@ -26,7 +26,7 @@ const slowGate =
       )
     : null
 
-export function Stadium({ cfg }) {
+export function Stadium({ cfg, weather }) {
   const { scene } = useGLTF('/pinalty_stadium3.glb')
   if (slowGate && !slowDone) throw slowGate
 
@@ -60,7 +60,7 @@ export function Stadium({ cfg }) {
       <Player />
       <Game cfg={cfg} />
       <Jumbotron />
-      <Atmosphere />
+      <Atmosphere weather={weather} />
     </group>
   )
 }

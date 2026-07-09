@@ -445,6 +445,14 @@
   animation-delay: 1.25s;
 }
 
+.ui-overlay--menu {
+  gap: 20px;
+}
+
+.ui-overlay--menu .ui-logo {
+  width: clamp(220px, 32vw, 420px);
+}
+
 .ui-title {
   color: #ffd23f;
   font-size: clamp(48px, 9vw, 110px);

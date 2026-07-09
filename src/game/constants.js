@@ -73,11 +73,14 @@ export const POWER_TRIES = 2
 // scale multiplies the keeper's resting size. charge/perfectMin/perfectMax
 // override the power-bar tuning: later rounds ping-pong faster and shrink the
 // gold zone (default to the CHARGE_TIME / PERFECT_* baselines when omitted).
+// weather (clear → rain → snow) rides the round too: the tournament walks you
+// from a calm night into a storm and then a freeze.
 export const ROUNDS = [
   {
     name: 'Red Blobs',
     tint: '#ff5a4d',
     goalie: 'blob',
+    weather: 'clear',
     keeper: { readChance: 0.55, reachX: 1.1, reachY: 2.7, react: 0.26, scale: 0.95, safePower: 0.45 },
     charge: 0.9,
     perfectMin: 0.87,
@@ -87,6 +90,7 @@ export const ROUNDS = [
     name: 'Green Blobs',
     tint: '#43d96b',
     goalie: 'blob',
+    weather: 'rain',
     keeper: { readChance: 0.68, reachX: 1.28, reachY: 2.9, react: 0.2, scale: 1.05, safePower: 0.5 },
     charge: 0.8,
     perfectMin: 0.875,
@@ -100,6 +104,7 @@ export const ROUNDS = [
     name: 'Bears',
     tint: null,
     goalie: 'bear',
+    weather: 'snow',
     // reachX stays under the corner gap (aim ±6.1 − dive clamp ±4.6 = 1.5) or a
     // full-power corner ball could never score.
     keeper: { readChance: 0.95, reachX: 1.35, reachY: 3.4, react: 0.1, scale: 1.1, safePower: 0.62, bendGood: 2.1 },
@@ -115,6 +120,7 @@ export const PRACTICE_CFG = {
   name: 'Practice',
   tint: '#ff5a4d',
   goalie: 'blob',
+  weather: 'clear',
   keeper: { readChance: 0.55, reachX: 1.1, reachY: 2.7, react: 0.26, scale: 0.95, safePower: 0.45 },
 }
 export const FIRE_POOL = 56

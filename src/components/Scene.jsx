@@ -1,8 +1,7 @@
 import { Suspense, useLayoutEffect, useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { ContactShadows, Environment, OrbitControls, PerspectiveCamera } from '@react-three/drei'
-import { Bloom, EffectComposer, TiltShift2, ToneMapping, Vignette } from '@react-three/postprocessing'
-import { ToneMappingMode } from 'postprocessing'
+import { Bloom, EffectComposer, TiltShift2, Vignette } from '@react-three/postprocessing'
 import { useControls } from 'leva'
 import * as THREE from 'three'
 import { useStadiumEvent } from '../game/events'
@@ -11,6 +10,8 @@ import { Confetti } from './Confetti'
 import { Sky } from './Sky'
 import { Stadium } from './Stadium'
 import { Trophy } from './Trophy'
+import { Weather } from './Weather'
+import { WEATHER_BY_ID } from '../game/weather'
 
 const DEBUG = new URLSearchParams(window.location.search).has('debug')
 const COARSE_POINTER = window.matchMedia?.('(pointer: coarse)').matches ?? false
@@ -152,7 +153,8 @@ function CameraRig({ screen }) {
   return null
 }
 
-export function Scene({ cfg, screen }) {
+export function Scene({ cfg, screen, weather }) {
+  const weatherConfig = WEATHER_BY_ID[weather] ?? WEATHER_BY_ID.clear
   const { px, py, pz, tx, ty, tz, fov } = useControls('camera', {
     px: { value: 2.9, min: -80, max: 80, step: 0.5, label: 'pos x' },
     py: { value: 4.2, min: -20, max: 80, step: 0.5, label: 'pos y' },
@@ -203,7 +205,7 @@ export function Scene({ cfg, screen }) {
         toneMappingExposure: 1.05,
       }}
     >
-      <color attach="background" args={['#cdb59b']} />
+      <color attach="background" args={[weatherConfig.ground]} />
       <PerspectiveCamera makeDefault fov={fov} near={0.1} far={400} position={[px, py, pz]} />
       {DEBUG ? (
         <>
@@ -223,18 +225,19 @@ export function Scene({ cfg, screen }) {
       ) : (
         <CameraRig screen={screen} />
       )}
-      <hemisphereLight args={['#e9dcc9', '#77836e', 0.32]} />
-      <ambientLight intensity={0.2} />
+      <hemisphereLight args={[weatherConfig.hemisphere[0], weatherConfig.hemisphere[1], weatherConfig.hemisphereIntensity]} />
+      <ambientLight intensity={weatherConfig.ambientIntensity} />
       {/* Key from the side (bright side + shadow side = readable egg silhouette); cool fill from the far side so the shadow side isn't black. */}
-      <directionalLight color="#ffd9a8" intensity={2.4} position={[-14, 16, 6]} />
-      <directionalLight color="#9fb8d6" intensity={0.65} position={[12, 8, 2]} />
-      <Sky />
+      <directionalLight color={weatherConfig.key[0]} intensity={weatherConfig.key[1]} position={[-14, 16, 6]} />
+      <directionalLight color={weatherConfig.fill[0]} intensity={weatherConfig.fill[1]} position={[12, 8, 2]} />
+      <Sky weather={weather} />
+      <Weather weather={weather} />
       <Confetti screen={screen} />
       {/* stars are baked into the Sky texture — a <Stars> point sphere put almost nothing in the visible sky band */}
       {/* no in-canvas fallback: R3F doesn't paint until this resolves — the
           DOM <Loading /> overlay covers the boot */}
       <Suspense fallback={null}>
-        <Stadium cfg={cfg} />
+        <Stadium cfg={cfg} weather={weather} />
         <Trophy screen={screen} />
         <ContactShadows
           frames={1} /* bake once: moving objects carry their own shadow planes */

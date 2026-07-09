@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+import { WEATHER_BY_ID } from '../game/weather'
 
 // seeded PRNG — Math.random is banned in render/useMemo by the purity lint
 function mulberry32(a) {
@@ -56,7 +57,7 @@ const STARS_GEO = (() => {
 })()
 
 const STAR_MAT = new THREE.ShaderMaterial({
-  uniforms: { uTime: { value: 0 }, uDpr: { value: 1 } },
+  uniforms: { uTime: { value: 0 }, uDpr: { value: 1 }, uOpacity: { value: 1 } },
   vertexColors: true,
   transparent: true,
   depthWrite: false,
@@ -75,42 +76,41 @@ const STAR_MAT = new THREE.ShaderMaterial({
     }
   `,
   fragmentShader: /* glsl */ `
+    uniform float uOpacity;
     varying vec3 vColor;
     void main() {
       float r = length(gl_PointCoord - 0.5) * 2.0;
       float core = smoothstep(0.4, 0.0, r);
       float halo = (1.0 - smoothstep(0.15, 1.0, r)) * 0.35;
-      float a = core + halo;
+      float a = (core + halo) * uOpacity;
       if (a < 0.02) discard;
       gl_FragColor = vec4(vColor, a);
     }
   `,
 })
 
-export function Sky() {
+export function Sky({ weather }) {
+  const weatherConfig = WEATHER_BY_ID[weather] ?? WEATHER_BY_ID.clear
   const tex = useMemo(() => {
     const canvas = document.createElement('canvas')
     canvas.width = 4
     canvas.height = 256
     const ctx = canvas.getContext('2d')
     const gradient = ctx.createLinearGradient(0, 0, 0, 256)
-    gradient.addColorStop(0, '#05070f')
-    gradient.addColorStop(0.35, '#0a1230')
-    gradient.addColorStop(0.6, '#28405f')
-    gradient.addColorStop(0.8, '#4a5f7a')
-    gradient.addColorStop(0.92, '#7d7a72')
-    gradient.addColorStop(1, '#c99a6a')
+    const stops = [0, 0.35, 0.6, 0.82, 1]
+    weatherConfig.skyStops.forEach((color, index) => gradient.addColorStop(stops[index], color))
     ctx.fillStyle = gradient
     ctx.fillRect(0, 0, 4, 256)
 
     const texture = new THREE.CanvasTexture(canvas)
     texture.colorSpace = THREE.SRGBColorSpace
     return texture
-  }, [])
+  }, [weatherConfig])
 
   useFrame((state) => {
     STAR_MAT.uniforms.uTime.value = state.clock.elapsedTime
     STAR_MAT.uniforms.uDpr.value = state.gl.getPixelRatio()
+    STAR_MAT.uniforms.uOpacity.value = weatherConfig.starOpacity
   })
 
   return (

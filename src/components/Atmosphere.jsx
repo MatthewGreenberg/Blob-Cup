@@ -2,6 +2,7 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useStadiumEvent } from '../game/events'
 import { BALL_START, GOAL_Z } from '../game/constants'
+import { WEATHER_BY_ID } from '../game/weather'
 
 // Field-level atmosphere (inside the stadium group, GLB-local coords), all
 // deliberately faint — visible in motion, not as decoration:
@@ -120,7 +121,9 @@ for (let i = 0; i < FLECKS; i++) {
 }
 if (fleckMesh.instanceColor) fleckMesh.instanceColor.needsUpdate = true
 
-export function Atmosphere() {
+export function Atmosphere({ weather }) {
+  const weatherConfig = WEATHER_BY_ID[weather] ?? WEATHER_BY_ID.clear
+
   // Kick contact: a puff of turf at the ball. (Math.random in handlers is fine.)
   useStadiumEvent('stadium:launch', () => {
     flecks.forEach((fleck) => {
@@ -153,7 +156,9 @@ export function Atmosphere() {
 
     // Haze breathes and drifts a touch.
     haze.position.x = Math.sin(t * 0.07) * 0.6
-    hazeMaterial.opacity = 0.12 + Math.sin(t * 0.21) * 0.025
+    hazeMaterial.color.set(weather === 'snow' ? '#e8f5ff' : weather === 'rain' ? '#cadce6' : '#ebe0d2')
+    hazeMaterial.opacity = (weather === 'snow' ? 0.18 : weather === 'rain' ? 0.15 : 0.12) + Math.sin(t * 0.21) * 0.025
+    dustMaterial.opacity = weatherConfig.id === 'clear' ? 0.85 : weatherConfig.id === 'snow' ? 0.16 : 0.04
 
     // Fluttering remnants only (the rest keep their static matrices).
     for (let i = 0; i < REMNANTS; i++) {

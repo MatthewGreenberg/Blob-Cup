@@ -46,6 +46,9 @@ function App() {
   const [mode, setMode] = useState('practice')
   const [round, setRound] = useState(0)
   const cfg = mode === 'tournament' ? ROUNDS[round] : PRACTICE_CFG
+  // weather rides the round config (clear → rain → snow); the envelopes in
+  // <Weather /> cross-fade, so it changes on the bracket screen before the match
+  const weather = cfg.weather
 
   // Unlock audio on the first click; play the kick on foot-on-ball (stadium:launch).
   useEffect(() => {
@@ -63,7 +66,7 @@ function App() {
   return (
     <main className="app-shell">
       <Leva hidden={!DEBUG} />
-      <Scene cfg={cfg} screen={screen} />
+      <Scene cfg={cfg} screen={screen} weather={weather} />
       {screen === 'match' && <Hud mode={mode} cfg={cfg} />}
       {screen === 'match' && <Tutorial />}
       <Ui screen={screen} setScreen={setScreen} mode={mode} setMode={setMode} round={round} setRound={setRound} />
