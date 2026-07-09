@@ -32,10 +32,12 @@ import {
   PRACTICE_CFG,
   PERFECT_MAX,
   PERFECT_MIN,
+  POWER_TRIES,
   RUN_UP_TIME,
   STADIUM_POS,
 } from '../game/constants'
 import { emitStadiumEvent } from '../game/events'
+import { TUTORIAL } from '../game/tutorial'
 import { makePlayerShadowTexture } from '../utils/textures'
 
 // Keeper (goalie bear) resting scale.
@@ -101,6 +103,12 @@ export function Game({ cfg = PRACTICE_CFG }) {
   // Idle loop, DiveL/DiveR/SaveCenter one-shots keyed to the commit direction,
   // then Cheer (save) or Dejected (goal) once the dive recovers.
   const { actions: keeperActions, mixer: keeperMixer } = useAnimations(keeperClips, keeperRef)
+  // useFrame writes timeScale (tutorial freeze); mutating the hook's return
+  // directly trips react-hooks/immutability, so it goes through a ref.
+  const keeperMixerRef = useRef(null)
+  useLayoutEffect(() => {
+    keeperMixerRef.current = keeperMixer
+  }, [keeperMixer])
 
   const playKeeper = (name, once) => {
     Object.values(keeperActions).forEach((action) => action.fadeOut(0.2))
@@ -148,10 +156,14 @@ export function Game({ cfg = PRACTICE_CFG }) {
       dove: false,
       diveDelay: 0,
       bend: 0,
+      bendPingedL: false,
+      bendPingedR: false,
       downX: 0,
       crossX: 0,
       windupWait: KICK_CONTACT,
       perfect: false,
+      over: false,
+      cycles: 0,
       saved: false,
       caught: false,
       netHit: false,
@@ -330,6 +342,7 @@ export function Game({ cfg = PRACTICE_CFG }) {
 
       shot.power = 0.15
       shot.powerDir = 1
+      shot.cycles = 0
       shot.t = 0 // hold time doubles as the player's walk-up progress
       // Touch has no hover, so aim from the actual press point (same raycast
       // as the useFrame reticle follow) instead of wherever the reticle was
@@ -346,6 +359,8 @@ export function Game({ cfg = PRACTICE_CFG }) {
       // Press locks the aim; dragging sideways while charging draws the curl.
       shot.aim.copy(reticleRef.current.position)
       shot.bend = 0
+      shot.bendPingedL = false
+      shot.bendPingedR = false
       shot.downX = (event.clientX / window.innerWidth) * 2 - 1
       setPhase('charging')
       emitStadiumEvent('stadium:windup')
@@ -355,12 +370,30 @@ export function Game({ cfg = PRACTICE_CFG }) {
       const shot = shotRef.current
       if (!shot || phaseRef.current !== 'charging') return
 
+      // Tutorial bend step: reversing the drag direction makes accidental
+      // lifts easy, and a release here would fire a weak kick right past the
+      // lesson — cancel back to aim instead (reset walks the player back;
+      // unfreeze first or the walk-back itself would be frozen).
+      if (TUTORIAL.freeze) {
+        TUTORIAL.freeze = false
+        setPhase('aim')
+        emitStadiumEvent('stadium:reset')
+        return
+      }
+
       const power = shot.power
       shot.from.copy(BALL_START)
       shot.flightTime = THREE.MathUtils.lerp(FLIGHT_TIME_SLOW, FLIGHT_TIME_FAST, power)
       shot.arc = Math.max(0.35, 1.4 - shot.aim.y * 0.3) * THREE.MathUtils.lerp(1.5, 0.8, power)
 
-      shot.perfect = power >= PERFECT_MIN && power <= PERFECT_MAX
+      shot.perfect = power >= (cfg.perfectMin ?? PERFECT_MIN) && power <= (cfg.perfectMax ?? PERFECT_MAX)
+      // Overcharged past the gold band: the shot balloons over the bar — the
+      // raised aim carries the ball above GOAL_TOP so it visibly sails over.
+      shot.over = power > (cfg.perfectMax ?? PERFECT_MAX)
+      if (shot.over) {
+        shot.aim.y = GOAL_TOP + 2.4
+        shot.arc = Math.max(0.35, 1.4 - shot.aim.y * 0.3) * THREE.MathUtils.lerp(1.5, 0.8, power)
+      }
 
       // Where the ball actually crosses the keeper's plane (curl included).
       const kK = (KEEPER_Z + 0.9 - shot.from.z) / (GOAL_Z - shot.from.z)
@@ -384,7 +417,7 @@ export function Game({ cfg = PRACTICE_CFG }) {
 
       const reachX = cfg.keeper.reachX + (1 - power) * 1.0
       const reachY = cfg.keeper.reachY + (1 - power) * 0.6
-      shot.saved = !shot.perfect && Math.abs(shot.crossX - shot.diveX) < reachX && crossY < reachY
+      shot.saved = !shot.perfect && !shot.over && Math.abs(shot.crossX - shot.diveX) < reachX && crossY < reachY
       shot.caught = shot.saved && Math.abs(shot.diveX) < 1 // central block: he hugs it
       // He dives a beat after contact — reacting to the ball, not the release.
       shot.dove = false
@@ -417,7 +450,11 @@ export function Game({ cfg = PRACTICE_CFG }) {
     if (!shot || !ball || !keeper) return
 
     const t = state.clock.elapsedTime
-    shot.t += delta
+    // Tutorial freeze stops gameplay time: the hold clock (shot.t doubles as
+    // the run-up/windup timer) and the keeper's animation hold still. Only
+    // ever true during 'charging', so no flight math is affected.
+    if (!TUTORIAL.freeze) shot.t += delta
+    if (keeperMixerRef.current) keeperMixerRef.current.timeScale = TUTORIAL.freeze ? 0 : 1
 
     // Contact shadow tracks the ball on the ground, shrinking/fading with height.
     const bShadow = ballShadowRef.current
@@ -446,13 +483,31 @@ export function Game({ cfg = PRACTICE_CFG }) {
       // Drag sideways from the press point to bend the shot.
       const bendTarget = THREE.MathUtils.clamp((state.pointer.x - shot.downX) * BEND_SCALE, -BEND_MAX, BEND_MAX)
       shot.bend = THREE.MathUtils.damp(shot.bend, bendTarget, 12, delta)
-      shot.power += (shot.powerDir * delta) / CHARGE_TIME
-      if (shot.power >= 1) {
-        shot.power = 1
-        shot.powerDir = -1
-      } else if (shot.power <= 0.15) {
-        shot.power = 0.15
-        shot.powerDir = 1
+      // Tutorial hook: once per charge per direction, ping when the drag
+      // crosses into keeper-beating bend territory (detail = ±1).
+      if (!shot.bendPingedR && shot.bend >= KEEPER_BEND_GOOD) {
+        shot.bendPingedR = true
+        emitStadiumEvent('stadium:bend', 1)
+      }
+      if (!shot.bendPingedL && shot.bend <= -KEEPER_BEND_GOOD) {
+        shot.bendPingedL = true
+        emitStadiumEvent('stadium:bend', -1)
+      }
+      // Tutorial's bend step freezes the meter mid-charge so first-timers
+      // learn the drag before the release pressure kicks in.
+      if (!TUTORIAL.freeze) {
+        shot.power +=
+          (shot.powerDir * delta) / ((cfg.charge ?? CHARGE_TIME) * (TUTORIAL.slow ? 2 : 1))
+        if (shot.power >= 1) {
+          shot.power = 1
+          shot.powerDir = -1
+        } else if (shot.power <= 0.15) {
+          shot.power = 0.15
+          shot.powerDir = 1
+          // Out of tries: auto-fire the soft shot. The synthetic pointerup
+          // reuses onUp so the whole release path stays in one place.
+          if (++shot.cycles >= POWER_TRIES) window.dispatchEvent(new Event('pointerup'))
+        }
       }
 
       emitStadiumEvent('stadium:power', shot.power)
@@ -466,7 +521,11 @@ export function Game({ cfg = PRACTICE_CFG }) {
     if (phase === 'charging' || phase === 'windup') {
       const arc = Math.max(0.35, 1.4 - shot.aim.y * 0.3) * THREE.MathUtils.lerp(1.5, 0.8, shot.power)
       const flow = (t * 1.4) % 1
-      previewBase.set(shot.power >= PERFECT_MIN && shot.power <= PERFECT_MAX ? '#ffffff' : '#ffe14d')
+      previewBase.set(
+        shot.power >= (cfg.perfectMin ?? PERFECT_MIN) && shot.power <= (cfg.perfectMax ?? PERFECT_MAX)
+          ? '#ffffff'
+          : '#ffe14d',
+      )
       for (let i = 0; i < PREVIEW_N; i++) {
         // k starts past the ball so no dot spawns on/behind it.
         const k = 0.12 + (0.88 * (i + flow)) / PREVIEW_N
@@ -521,6 +580,17 @@ export function Game({ cfg = PRACTICE_CFG }) {
           else shot.vel.set(Math.sign(shot.crossX - shot.diveX || 1) * 5, 6, 14).multiplyScalar(0.6 + shot.power * 0.7)
           setPhase('rebound')
           emitStadiumEvent('stadium:save')
+        } else if (shot.over) {
+          // Sailed over the bar: keep carrying past the net (rebound phase
+          // skips the net collision) and land behind the goal. Counts as a
+          // missed shot — 'over' detail swaps the SAVED! banner for OVER!.
+          shot.vel.set(
+            ((shot.aim.x - shot.from.x) / shot.flightTime) * 0.35,
+            2.2,
+            ((GOAL_Z - shot.from.z) / shot.flightTime) * 0.6,
+          )
+          setPhase('rebound')
+          emitStadiumEvent('stadium:save', 'over')
         } else {
           shot.vel.set(
             ((shot.aim.x - shot.from.x) / shot.flightTime) * 0.35,
@@ -694,7 +764,8 @@ export function Game({ cfg = PRACTICE_CFG }) {
       const squash = 1 - shot.diveP * (center ? 0.3 : 0.12)
       const s = cfg.keeper.scale
       blob.scale.set(BLOB_SX * s * (1 + (1 - squash) * 0.8), BLOB_SY * s * squash, BLOB_SX * s)
-      blob.position.y = Math.abs(Math.sin(t * 3.2)) * 0.14 * (1 - shot.diveP)
+      // Idle bounce parks during the tutorial freeze so the whole world stops.
+      blob.position.y = TUTORIAL.freeze ? 0 : Math.abs(Math.sin(t * 3.2)) * 0.14 * (1 - shot.diveP)
     }
   })
 

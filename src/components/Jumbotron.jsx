@@ -269,12 +269,12 @@ export function Jumbotron() {
     st.streak++
     flash('GOOOAL!', '#ffb800', '#20242e')
   })
-  useStadiumEvent('stadium:save', () => {
+  useStadiumEvent('stadium:save', (event) => {
     const st = stRef.current
     if (!st) return
     st.saves++
     st.streak = 0
-    flash('SAVED!', '#1f7ae0', '#ffffff')
+    flash(event.detail === 'over' ? 'OVER!' : 'SAVED!', '#1f7ae0', '#ffffff')
   })
   useStadiumEvent('stadium:perfect', () => flash('PERFECT!', '#ffffff', '#e0355c'))
 

@@ -168,6 +168,105 @@
   box-shadow: 0 0 8px rgba(255, 210, 63, 0.9);
 }
 
+/* first-visit tutorial coach card — sits above the power bar, styled to the
+   game-score/power cartoon glass language */
+.tutorial-dim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 70% 60% at 50% 42%, transparent 40%, rgba(10, 21, 26, 0.42) 100%);
+  animation: tutorial-dim-in 0.4s ease both;
+}
+
+@keyframes tutorial-dim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.tutorial-card {
+  position: absolute;
+  left: 50%;
+  bottom: max(clamp(96px, 16vh, 150px), calc(env(safe-area-inset-bottom) + 80px));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 24px);
+  padding: 10px 14px 10px 12px;
+  border: 3px solid #102126;
+  border-radius: 16px;
+  background: #fffbe9;
+  box-shadow: 0 5px 0 #102126;
+  color: #102126;
+  pointer-events: none;
+  animation: tutorial-pop 0.4s cubic-bezier(0.2, 2, 0.4, 1) both;
+}
+
+.tutorial-step {
+  flex: none;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #ffd23f;
+  border: 2px solid #102126;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.tutorial-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tutorial-text {
+  font-size: clamp(13px, 1.7vw, 16px);
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.tutorial-sub {
+  font-size: clamp(11px, 1.4vw, 13px);
+  font-weight: 700;
+  color: #6b7683;
+  line-height: 1.25;
+}
+
+.tutorial-skip {
+  flex: none;
+  padding: 4px 10px;
+  border: 2px solid #102126;
+  border-radius: 999px;
+  background: transparent;
+  color: #8a94a3;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.tutorial-skip:hover {
+  color: #102126;
+  background: rgba(16, 33, 38, 0.08);
+}
+
+@keyframes tutorial-pop {
+  0% {
+    transform: translateX(-50%) scale(0.6);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+}
+
 .game-hint {
   position: absolute;
   left: 50%;
@@ -1058,34 +1157,70 @@
     -webkit-text-stroke: 3px #102126;
   }
 
-  /* in-match HUD: tighten so panel + menu button share a phone-width top edge */
+  /* in-match HUD: names/lead hidden below, so condense hard for phones */
   .ui-hud-panel {
-    width: min(348px, calc(100vw - 110px));
+    width: min(228px, calc(100vw - 96px));
+  }
+
+  .ui-hud-panel-head {
+    padding: 7px 11px;
+  }
+
+  .ui-hud-stage-label {
+    font-size: 12px;
   }
 
   .ui-hud-team {
-    padding: 7px 8px;
+    padding: 6px 9px;
     gap: 5px;
     font-size: 11px;
   }
 
   .ui-hud-team-goals {
-    font-size: 18px;
+    font-size: 17px;
   }
 
   .ui-hud-team-icon {
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
   }
 
+  .ui-hud-shots {
+    gap: 8px;
+    padding: 9px 11px 11px;
+  }
+
+  .ui-hud-shots-label {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+  }
+
+  /* phones: drop the team names + leader line for a tighter scoreboard */
+  .ui-hud-team-name,
+  .ui-hud-lead {
+    display: none;
+  }
+
+  /* smaller shot chart */
   .ui-hud-pills {
-    gap: 7px;
+    gap: 5px;
   }
 
   .ui-pill-num {
-    width: 26px;
-    height: 26px;
-    font-size: 13px;
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+    border-width: 1.5px;
+  }
+
+  .ui-pill.is-current .ui-pill-num {
+    box-shadow: 0 0 0 3px rgba(47, 123, 255, 0.25);
+  }
+
+  .ui-pill-mark {
+    width: 12px;
+    height: 12px;
+    font-size: 8px;
   }
 
   .bracket-match {

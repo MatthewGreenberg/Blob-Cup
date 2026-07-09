@@ -5,6 +5,7 @@ import './game/preloadAssets'
 import { Hud } from './components/Hud'
 import { Loading } from './components/Loading'
 import { Scene } from './components/Scene'
+import { Tutorial } from './components/Tutorial'
 import { Ui } from './components/Ui'
 import { PRACTICE_CFG, ROUNDS } from './game/constants'
 import { playCheer, playKick, toggleSound, unlockSound } from './game/sound'
@@ -63,7 +64,8 @@ function App() {
     <main className="app-shell">
       <Leva hidden={!DEBUG} />
       <Scene cfg={cfg} screen={screen} />
-      {screen === 'match' && <Hud mode={mode} />}
+      {screen === 'match' && <Hud mode={mode} cfg={cfg} />}
+      {screen === 'match' && <Tutorial />}
       <Ui screen={screen} setScreen={setScreen} mode={mode} setMode={setMode} round={round} setRound={setRound} />
       <SoundToggle />
       <Loading />

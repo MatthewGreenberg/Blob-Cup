@@ -5,6 +5,7 @@ import { button, useControls } from 'leva'
 import * as THREE from 'three'
 import { PLAYER_KICK_Z, PLAYER_POS, PLAYER_RETURN_TIME, RUN_UP_TIME } from '../game/constants'
 import { useStadiumEvent } from '../game/events'
+import { TUTORIAL } from '../game/tutorial'
 import { makePlayerShadowTexture } from '../utils/textures'
 
 const PLAYER_GOAL_YAW = Math.PI / 2
@@ -26,6 +27,12 @@ export function Player() {
   const group = useRef(null)
   const [targetYaw, setTargetYaw] = useState(PLAYER_GOAL_YAW)
   const { actions, mixer } = useAnimations(animations, group)
+  // useFrame writes timeScale (tutorial freeze); mutating the hook's return
+  // directly trips react-hooks/immutability, so it goes through a ref.
+  const mixerRef = useRef(null)
+  useLayoutEffect(() => {
+    mixerRef.current = mixer
+  }, [mixer])
 
   const play = (name, once) => {
     Object.values(actions).forEach((action) => action.fadeOut(0.15))
@@ -182,8 +189,11 @@ export function Player() {
       influences[face.happy] = THREE.MathUtils.damp(influences[face.happy], EMOTION.happy, 6, delta)
       influences[face.sad] = THREE.MathUtils.damp(influences[face.sad], EMOTION.sad, 6, delta)
     }
+    // Tutorial freeze: the run-up statues mid-stride (clip and translation
+    // both hold) until the step is done — gameplay time is stopped.
+    if (mixerRef.current) mixerRef.current.timeScale = TUTORIAL.freeze ? 0 : 1
     const walk = walkRef.current
-    if (walk?.active && group.current) {
+    if (walk?.active && group.current && !TUTORIAL.freeze) {
       walk.t += delta
       const k = Math.min(walk.t / walk.dur, 1)
       group.current.position.z = THREE.MathUtils.lerp(walk.fromZ, walk.toZ, k)

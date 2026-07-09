@@ -56,32 +56,47 @@ export const KEEPER_REACT = 0.08
 // bend = lateral flight offset peaking mid-flight (x += bend * sin(k*pi)).
 export const BEND_MAX = 4
 export const BEND_SCALE = 9
-export const PERFECT_MIN = 0.86
-export const PERFECT_MAX = 0.97
+export const PERFECT_MIN = 0.87
+export const PERFECT_MAX = 0.96
+// The meter only ping-pongs this many full swings before auto-firing the soft
+// shot; overshooting past the gold band balloons the ball over the bar.
+export const POWER_TRIES = 2
 
 // Tournament: three scripted rounds, keeper harder each time. Rounds 1-2 swap
 // the bear for a giant tinted fan blob (procedural dive lean in Game); the
 // final boss is the animated bear at max difficulty. Practice = current tuning.
 // keeper: readChance/reachX/reachY/react override the KEEPER_* baselines,
-// scale multiplies the keeper's resting size.
+// scale multiplies the keeper's resting size. charge/perfectMin/perfectMax
+// override the power-bar tuning: later rounds ping-pong faster and shrink the
+// gold zone (default to the CHARGE_TIME / PERFECT_* baselines when omitted).
 export const ROUNDS = [
   {
     name: 'Red Blobs',
     tint: '#ff5a4d',
     goalie: 'blob',
     keeper: { readChance: 0.55, reachX: 1.1, reachY: 2.7, react: 0.26, scale: 0.95 },
+    charge: 0.9,
+    perfectMin: 0.87,
+    perfectMax: 0.96,
   },
   {
     name: 'Green Blobs',
     tint: '#43d96b',
     goalie: 'blob',
-    keeper: { readChance: 0.8, reachX: 1.45, reachY: 3.1, react: 0.15, scale: 1.1 },
+    keeper: { readChance: 0.68, reachX: 1.28, reachY: 2.9, react: 0.2, scale: 1.05 },
+    charge: 0.8,
+    perfectMin: 0.875,
+    perfectMax: 0.95,
   },
   {
+    // Same keeper as Green Blobs (round 2) — the gold zone shrinks one more notch.
     name: 'Bears',
     tint: null,
     goalie: 'bear',
-    keeper: { readChance: 0.98, reachX: 1.85, reachY: 3.45, react: 0.05, scale: 1.05 },
+    keeper: { readChance: 0.68, reachX: 1.28, reachY: 2.9, react: 0.2, scale: 1.05 },
+    charge: 0.8,
+    perfectMin: 0.89,
+    perfectMax: 0.945,
   },
 ]
 export const MATCH_SHOTS = 5

@@ -40,6 +40,9 @@ const SHOTS = {
   resultWin: { pos: [2.8, 3.1, 29.8], target: [0, 2.7, 23], fov: 33, sway: 0.2 },
   champion: { pos: [-3.6, 4.4, 30.6], target: [0, 3, 23], fov: 38, sway: 0.16 },
   match: { pos: [0, 4.2, 38], target: [0, 0, -14], fov: 31, sway: 0 },
+  // Portrait phones: pull in behind the kicker and tilt UP off the grass for a
+  // tighter, more heroic angle (target raised, camera lower + closer).
+  matchMobile: { pos: [0, 3.4, 33], target: [0, 2.6, -14], fov: 31, sway: 0 },
 }
 
 // The SHOTS are framed for landscape, but three.js fov is vertical — a portrait
@@ -88,7 +91,10 @@ function CameraRig({ screen }) {
   useFrame((state, delta) => {
     const rig = rigRef.current
     if (!rig) return
-    const shot = !rig.ready ? SHOTS.intro : (SHOTS[screen === 'result' && won ? 'resultWin' : screen] ?? SHOTS.match)
+    const portrait = state.size.width / state.size.height < REF_ASPECT
+    const key = screen === 'result' && won ? 'resultWin' : screen
+    let shot = !rig.ready ? SHOTS.intro : (SHOTS[key] ?? SHOTS.match)
+    if (rig.ready && screen === 'match' && portrait) shot = SHOTS.matchMobile
     const time = state.clock.elapsedTime
     const cam = state.camera
 
