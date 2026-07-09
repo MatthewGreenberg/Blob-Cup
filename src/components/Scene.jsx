@@ -47,19 +47,21 @@ const SHOTS = {
   cupWin: { pos: [2.9, 3.9, 30.9], target: [0, 3.3, 23], fov: 42, sway: 0.18 },
   champion: { pos: [-3.6, 4.4, 30.6], target: [0, 3, 23], fov: 38, sway: 0.16 },
   match: { pos: [0, 4.2, 38], target: [0, 0, -14], fov: 31, sway: 0 },
-  // Portrait phones: pull in behind the kicker and tilt UP off the grass for a
-  // tighter, more heroic angle (target raised, camera lower + closer).
+  // Portrait phones (width < height, NOT just narrow — see CameraRig): pull in
+  // behind the kicker and tilt UP off the grass for a tighter, more heroic
+  // angle (target raised, camera lower + closer).
   matchMobile: { pos: [0, 3.4, 33], target: [0, 2.6, -14], fov: 31, sway: 0 },
 }
 
-// The SHOTS are framed for landscape, but three.js fov is vertical — a portrait
-// phone keeps the vertical slice and crops the sides to a tunnel. Below the
-// reference aspect, widen the fov to preserve the horizontal frustum instead
-// (zooming the shot out), capped before wide-angle distortion sets in.
+// The SHOTS are framed at REF_ASPECT, but three.js fov is vertical — every
+// window shape keeps the vertical slice and crops or pads the sides (a portrait
+// phone becomes a tunnel; Safari's shorter browser chrome makes a taller,
+// narrower viewport than Chrome's at the same window size, and the shot loses
+// its edges). Solve the vertical fov per aspect so the HORIZONTAL frustum is
+// the constant instead, capped before wide-angle distortion sets in.
 const REF_ASPECT = 1.6
 const FOV_CAP = 68
 function aspectFov(fov, aspect) {
-  if (aspect >= REF_ASPECT) return fov
   const halfH = Math.tan(THREE.MathUtils.degToRad(fov) / 2) * REF_ASPECT
   return Math.min(FOV_CAP, THREE.MathUtils.radToDeg(2 * Math.atan(halfH / aspect)))
 }
@@ -102,7 +104,10 @@ function CameraRig({ screen }) {
   useFrame((state, delta) => {
     const rig = rigRef.current
     if (!rig) return
-    const portrait = state.size.width / state.size.height < REF_ASPECT
+    // Actual portrait orientation only — an aspect < REF_ASPECT threshold also
+    // caught desktop windows (Safari's taller viewport tripped it, Chrome's not)
+    // and swapped in the pulled-in mobile shot on one browser but not the other.
+    const portrait = state.size.width < state.size.height
     const key =
       won?.final && (screen === 'match' || screen === 'result')
         ? 'cupWin'
