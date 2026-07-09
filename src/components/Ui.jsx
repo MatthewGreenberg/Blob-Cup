@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { MATCH_GOALS_TO_WIN, MATCH_SHOTS, ROUNDS } from '../game/constants'
 import { emitStadiumEvent, useStadiumEvent } from '../game/events'
+import { toggleSound } from '../game/sound'
 
 // DOM overlays outside the Canvas: home menu, about, animated tournament
 // bracket, in-match chip, round result and champion screens. Overlays have
@@ -96,6 +97,7 @@ export function Ui({ screen, setScreen, mode, setMode, round, setRound }) {
   const [outcome, setOutcome] = useState(null)
   const [intro, setIntro] = useState(null)
   const [paused, setPaused] = useState(false)
+  const [soundOn, setSoundOn] = useState(true) // mirrors sound.js; boots ON
   // Final win: hold the trophy/confetti close-up before the champion overlay.
   const [celebrating, setCelebrating] = useState(false)
   const countsRef = useRef({ goals: 0, saves: 0, outcome: null, log: [] })
@@ -267,6 +269,15 @@ export function Ui({ screen, setScreen, mode, setMode, round, setRound }) {
                   Restart Tournament
                 </button>
               )}
+              {/* sound.btn is hidden on phones (it collides with the tutorial
+                  bar), so the mute control lives here on mobile only */}
+              <button
+                type="button"
+                className="ui-btn ui-btn--mobile"
+                onClick={() => setSoundOn(toggleSound())}
+              >
+                {soundOn ? 'Mute Audio' : 'Unmute Audio'}
+              </button>
               <button type="button" className="ui-btn" onClick={() => setPaused(false)}>
                 Resume
               </button>

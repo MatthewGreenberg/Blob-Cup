@@ -595,6 +595,11 @@
   background: linear-gradient(#ffd23f, #ffb43f);
 }
 
+/* mobile-only pause-menu buttons (e.g. Mute Audio); shown via the 680px query */
+.ui-btn--mobile {
+  display: none;
+}
+
 .ui-about {
   width: min(520px, calc(100vw - 40px));
   max-width: 520px;
@@ -1153,6 +1158,44 @@
 @media (max-width: 680px) {
   .scene-hud {
     padding: 14px 16px;
+  }
+
+  /* sound toggle collides with the bottom tutorial bar on phones — hide it
+     and expose Mute/Unmute Audio in the pause menu instead.
+     .app-shell scope beats the later base .sound-btn { display: flex } */
+  .app-shell .sound-btn {
+    display: none;
+  }
+
+  .ui-btn--mobile {
+    display: inline-block;
+    text-align: center;
+  }
+
+  /* tutorial: full-width bar pinned to the bottom edge on phones */
+  .tutorial-card {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    max-width: none;
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+    border-width: 3px 0 0 0;
+    box-shadow: 0 -4px 0 rgba(16, 33, 38, 0.25);
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom)) 16px;
+    gap: 10px;
+  }
+
+  @keyframes tutorial-pop {
+    0% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
   }
 
   .scene-hud h1 {

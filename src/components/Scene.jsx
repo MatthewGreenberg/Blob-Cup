@@ -1,6 +1,6 @@
 import { Suspense, useLayoutEffect, useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { ContactShadows, Environment, OrbitControls, PerspectiveCamera, Stars } from '@react-three/drei'
+import { ContactShadows, Environment, OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { Bloom, EffectComposer, TiltShift2, ToneMapping, Vignette } from '@react-three/postprocessing'
 import { ToneMappingMode } from 'postprocessing'
 import { useControls } from 'leva'
@@ -13,6 +13,7 @@ import { Stadium } from './Stadium'
 import { Trophy } from './Trophy'
 
 const DEBUG = new URLSearchParams(window.location.search).has('debug')
+const COARSE_POINTER = window.matchMedia?.('(pointer: coarse)').matches ?? false
 
 // Per-screen cinematic camera shots. The rig damps position/target/fov toward
 // the active shot every frame, so screen changes become smooth camera moves
@@ -113,7 +114,8 @@ function CameraRig({ screen }) {
     const cam = state.camera
 
     // Pointer look during play (the sway:0 shots), slow sway everywhere else.
-    const yaw = shot.sway === 0 ? -state.pointer.x * 0.06 : Math.sin(time * 0.16) * shot.sway
+    // ponytail: touch = where you aim, not a camera stick — skip mouse-look on coarse pointers.
+    const yaw = shot.sway === 0 ? (COARSE_POINTER ? 0 : -state.pointer.x * 0.06) : Math.sin(time * 0.16) * shot.sway
     const ox = shot.pos[0] - shot.target[0]
     const oz = shot.pos[2] - shot.target[2]
     const angle = Math.atan2(ox, oz) + yaw
@@ -228,7 +230,7 @@ export function Scene({ cfg, screen }) {
       <directionalLight color="#9fb8d6" intensity={0.65} position={[12, 8, 2]} />
       <Sky />
       <Confetti screen={screen} />
-      <Stars radius={80} depth={60} count={2000} factor={7} saturation={0} speed={0.5} />
+      {/* stars are baked into the Sky texture — a <Stars> point sphere put almost nothing in the visible sky band */}
       {/* no in-canvas fallback: R3F doesn't paint until this resolves — the
           DOM <Loading /> overlay covers the boot */}
       <Suspense fallback={null}>

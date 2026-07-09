@@ -42,6 +42,10 @@ import { TUTORIAL } from '../game/tutorial'
 import { makePlayerShadowTexture } from '../utils/textures'
 
 // Keeper (goalie bear) resting scale.
+// ponytail: touch is a coarser gesture — slow the power ping-pong on phones so
+// the gold zone is catchable. Multiplies the charge period across all rounds.
+const CHARGE_MULT = (window.matchMedia?.('(pointer: coarse)').matches ?? false) ? 1.4 : 1
+
 const KEEPER_SX = 2.3
 const KEEPER_SY = 2.7
 // Blob keeper (tournament rounds 1-2) resting scale: the fan blob is ~1.5u
@@ -501,7 +505,8 @@ export function Game({ cfg = PRACTICE_CFG }) {
       // learn the drag before the release pressure kicks in.
       if (!TUTORIAL.freeze) {
         shot.power +=
-          (shot.powerDir * delta) / ((cfg.charge ?? CHARGE_TIME) * (TUTORIAL.slow ? 2 : 1))
+          (shot.powerDir * delta) /
+          ((cfg.charge ?? CHARGE_TIME) * CHARGE_MULT * (TUTORIAL.slow ? 2 : 1))
         if (shot.power >= 1) {
           shot.power = 1
           shot.powerDir = -1
